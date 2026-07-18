@@ -68,6 +68,8 @@
 </template>
 
 <script>
+import { getTraceList } from "@/apis/trace"
+
 export default {
   name: "TraceList",
   data() {
@@ -82,7 +84,7 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
-      const res = await this.$http.get("/trace/list")
+      const res = await getTraceList()
       if (res.code === 200) {
         this.list = res.data
         this.loading = false
@@ -90,13 +92,6 @@ export default {
         this.list = []
         this.loading = false
       }
-    },
-    copyData(text) {
-      navigator.clipboard.writeText(text).then(() => {
-        this.$message.success('复制成功')
-      }).catch(() => {
-        this.$message.error('复制失败')
-      })
     }
   }
 }

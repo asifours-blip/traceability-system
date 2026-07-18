@@ -161,8 +161,8 @@
 </template>
 
 <script>
-import { dateTimeUtils } from "@/utils/commonUtil";
 import IotChart from "@/components/IotChart.vue"; // 引入物联网图表组件
+import { getTraceDetail } from "@/apis/trace"
 
 export default {
   name: "trace-detail",
@@ -171,7 +171,6 @@ export default {
   },
   data() {
     return {
-      dateTimeUtils,
       detail: {},
     };
   },
@@ -182,12 +181,12 @@ export default {
     },
   },
   async created() {
-    const { data } = await this.$http.get("/trace/detail/" + this.$route.params.traceNumber);
+    const { data } = await getTraceDetail(this.$route.params.traceNumber);
     this.detail = data || {};
   },
   methods: {
     formatTime(timestamp) {
-      return dateTimeUtils.formatTimestamp(timestamp);
+      return this.dateTimeUtils.formatTimestamp(timestamp);
     },
   },
 };

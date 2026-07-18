@@ -1,4 +1,4 @@
-package com.qhx.back.contreoller;
+package com.qhx.back.controller;
 
 import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONArray;

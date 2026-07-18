@@ -1,4 +1,4 @@
-package com.qhx.back.contreoller;
+package com.qhx.back.controller;
 
 import com.qhx.back.model.Result;
 import org.springframework.beans.factory.annotation.Value;

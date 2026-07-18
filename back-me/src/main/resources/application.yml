@@ -1,0 +1,37 @@
+# 端口
+server:
+  port: 8010
+
+allow:
+  paths: /login,/register,/getContractOwner,/getSystemInfo,/trace/detail
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+ # 数据库连接配置（表 iot_sensor_data 存放在 mysql 库中）
+  datasource:
+    url: jdbc:mysql://localhost:3306/mysql?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+# 合约部署相关信息
+contract:
+  address: '0x40ab943362205eacbc199f452d510d295e01effb'
+  owner: '0x7af10cb8ddf56e455d29bea42813f0d3f41738d7'
+  name: 'Trace'
+  abi: '[{"constant":false,"inputs":[{"name":"traceNumber","type":"string"},{"name":"companyName","type":"string"},{"name":"productName","type":"string"},{"name":"productionLocation","type":"string"},{"name":"variety","type":"string"},{"name":"productionBatch","type":"string"},{"name":"productionCert","type":"string"},{"name":"productTime","type":"string"}],"name":"newAgroFood","outputs":[{"name":"","type":"address"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"traceNumber","type":"string"}],"name":"getAgroFoodInfo","outputs":[{"name":"companyName","type":"string"},{"name":"productName","type":"string"},{"name":"productionLocation","type":"string"},{"name":"variety","type":"string"},{"name":"productionBatch","type":"string"},{"name":"productionCert","type":"string"},{"name":"productTime","type":"string"},{"name":"timestamp","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"account","type":"address"}],"name":"isRetailer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"renounceDistributor","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"getSystemInfo","outputs":[{"name":"","type":"string"},{"name":"","type":"string"},{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"account","type":"address"}],"name":"addDistributor","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"clearSystemInfo","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"traceNumber","type":"string"},{"name":"companyName","type":"string"},{"name":"storageCondition","type":"string"},{"name":"transportMethod","type":"string"},{"name":"distributeBatch","type":"string"},{"name":"storageLocation","type":"string"},{"name":"distributePrice","type":"uint256"},{"name":"distributeQuantity","type":"uint256"},{"name":"inspectionReport","type":"string"}],"name":"addTraceInfoByDistributor","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"account","type":"address"}],"name":"addRetailer","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"account","type":"address"}],"name":"isDistributor","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"traceNumber","type":"string"}],"name":"getAgroFoodInfoByDistributor","outputs":[{"name":"companyName","type":"string"},{"name":"storageCondition","type":"string"},{"name":"transportMethod","type":"string"},{"name":"distributeBatch","type":"string"},{"name":"storageLocation","type":"string"},{"name":"distributePrice","type":"uint256"},{"name":"distributeQuantity","type":"uint256"},{"name":"inspectionReport","type":"string"},{"name":"timestamp","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_name","type":"string"},{"name":"_version","type":"string"},{"name":"_description","type":"string"}],"name":"setSystemInfo","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"traceNumber","type":"string"}],"name":"getAgroFoodInfoByRetailer","outputs":[{"name":"companyName","type":"string"},{"name":"salePrice","type":"uint256"},{"name":"saleQuantity","type":"uint256"},{"name":"shelfLife","type":"uint256"},{"name":"invoiceNo","type":"string"},{"name":"saleTime","type":"string"},{"name":"timestamp","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"renounceRetailer","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"getAgroFoodList","outputs":[{"name":"","type":"string[]"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"account","type":"address"}],"name":"addProducer","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"traceNumber","type":"string"},{"name":"companyName","type":"string"},{"name":"salePrice","type":"uint256"},{"name":"saleQuantity","type":"uint256"},{"name":"shelfLife","type":"uint256"},{"name":"invoiceNo","type":"string"},{"name":"saleTime","type":"string"}],"name":"addTraceInfoByRetailer","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"account","type":"address"}],"name":"isProducer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[],"name":"renounceProducer","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"inputs":[{"name":"producer","type":"address"},{"name":"distributor","type":"address"},{"name":"retailer","type":"address"}],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"RetailerAdded","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"RetailerRemoved","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"DistributorAdded","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"DistributorRemoved","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"ProducerAdded","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"account","type":"address"}],"name":"ProducerRemoved","type":"event"}]'
+
+webase-front:
+  url: 'http://192.168.5.128:5002/WeBASE-Front'
+
+ipfs:
+  host: '127.0.0.1'
+  port: 5001

@@ -1,0 +1,95 @@
+* {
+	padding: 0;
+	margin: 0;
+}
+
+html {
+	font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+		"微软雅黑", Arial, sans-serif;
+}
+
+// TODO 修改element-ui 默认按钮样式
+/* 主操作按钮（Primary） */
+.el-button--primary {
+	background-color: #0a69d2; /* 主色调：深蓝色 */
+	border-color: #0a69d2;
+	color: #ffffff;
+}
+
+.el-button--primary:hover {
+	background-color: rgba(10, 105, 210, 0.7); /* 鼠标悬停时透明度降低 */
+	border-color: rgba(10, 105, 210, 0.7);
+}
+
+.el-button--primary:focus {
+	background-color: rgba(10, 105, 210, 0.7); /* 聚焦时透明度降低 */
+	border-color: rgba(10, 105, 210, 0.7);
+}
+
+/* 成功操作按钮（Success） */
+.el-button--success {
+	background-color: #36b37e; /* 成功色调：绿色 */
+	border-color: #36b37e;
+	color: #ffffff;
+}
+
+.el-button--success:hover {
+	background-color: rgba(54, 179, 126, 0.7); /* 鼠标悬停时透明度降低 */
+	border-color: rgba(54, 179, 126, 0.7);
+}
+
+.el-button--success:focus {
+	background-color: rgba(54, 179, 126, 0.7); /* 聚焦时透明度降低 */
+	border-color: rgba(54, 179, 126, 0.7);
+}
+
+/* 警告操作按钮（Warning） */
+.el-button--warning {
+	background-color: #ff9500; /* 警告色调：橙色 */
+	border-color: #ff9500;
+	color: #ffffff;
+}
+
+.el-button--warning:hover {
+	background-color: rgba(255, 149, 0, 0.7); /* 鼠标悬停时透明度降低 */
+	border-color: rgba(255, 149, 0, 0.7);
+}
+
+.el-button--warning:focus {
+	background-color: rgba(255, 149, 0, 0.7); /* 聚焦时透明度降低 */
+	border-color: rgba(255, 149, 0, 0.7);
+}
+
+/* 危险操作按钮（Danger） */
+.el-button--danger {
+	background-color: #f53f3f; /* 危险色调：红色 */
+	border-color: #f53f3f;
+	color: #ffffff;
+}
+
+.el-button--danger:hover {
+	background-color: rgba(245, 63, 63, 0.7); /* 鼠标悬停时透明度降低 */
+	border-color: rgba(245, 63, 63, 0.7);
+}
+
+.el-button--danger:focus {
+	background-color: rgba(245, 63, 63, 0.7); /* 聚焦时透明度降低 */
+	border-color: rgba(245, 63, 63, 0.7);
+}
+
+::-webkit-scrollbar {
+	width: 12px;
+	/* 滚动条的宽度 */
+}
+
+::-webkit-scrollbar-track {
+	background: #f1f1f1; /* 滚动条轨道的颜色 */
+}
+
+::-webkit-scrollbar-thumb {
+	background: #888; /* 滚动条滑块的颜色 */
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: #555; /* 滚动条滑块悬停时的颜色 */
+}

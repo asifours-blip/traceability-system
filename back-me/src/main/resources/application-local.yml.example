@@ -1,0 +1,19 @@
+# 本地真实配置示例
+# 用法：复制本文件为 application-local.yml，按实际部署填写
+# application-local.yml 已被 .gitignore 忽略，不会被提交
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/mysql?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: your-mysql-password
+
+contract:
+  address: '0x你的合约地址'
+  owner: '0x你的合约owner地址'
+
+webase-front:
+  url: 'http://你的WeBASE-Front地址:5002/WeBASE-Front'
+
+ipfs:
+  host: '127.0.0.1'
+  port: 5001

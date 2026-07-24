@@ -29,3 +29,6 @@ yarn-error.log*
 
 # Blockchain
 back-me/src/main/resources/accounts/
+
+# 本地敏感配置（数据库密码/合约地址等，勿提交）
+back-me/src/main/resources/application-local.yml

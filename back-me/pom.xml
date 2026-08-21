@@ -28,12 +28,49 @@
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
+			<version>1.18.36</version>
 			<optional>true</optional>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
+		</dependency>
+		<!-- 本地 jars，CI/命令行编译需要显式声明；不连 IPFS 守护进程 -->
+		<dependency>
+			<groupId>io.ipfs</groupId>
+			<artifactId>java-ipfs-http-client</artifactId>
+			<version>local</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/ipfs.jar</systemPath>
+		</dependency>
+		<dependency>
+			<groupId>io.ipfs</groupId>
+			<artifactId>multihash</artifactId>
+			<version>local</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/multihash.jar</systemPath>
+		</dependency>
+		<dependency>
+			<groupId>io.ipfs</groupId>
+			<artifactId>multibase</artifactId>
+			<version>local</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/multibase.jar</systemPath>
+		</dependency>
+		<dependency>
+			<groupId>io.ipfs</groupId>
+			<artifactId>multiaddr</artifactId>
+			<version>local</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/multiaddr.jar</systemPath>
+		</dependency>
+		<dependency>
+			<groupId>io.ipfs</groupId>
+			<artifactId>cid</artifactId>
+			<version>local</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/cid.jar</systemPath>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
@@ -86,7 +123,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.8.1</version>
+				<version>3.13.0</version>
 				<configuration>
 					<source>14</source>
 					<target>14</target>

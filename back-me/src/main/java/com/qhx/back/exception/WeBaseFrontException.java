@@ -5,6 +5,7 @@ public class WeBaseFrontException extends RuntimeException
     public WeBaseFrontException(Throwable cause)
     {
         super(cause);
+        this.mes = cause == null ? null : cause.getMessage();
     }
 
     public WeBaseFrontException(String message)

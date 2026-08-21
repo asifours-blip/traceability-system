@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 @Component
 @Slf4j
-public class HttpUtil {
+public class HttpUtil implements com.qhx.back.client.WeBaseClient {
 
 
     @Value("${webase-front.url}")
@@ -79,6 +79,8 @@ public class HttpUtil {
             } else {
                 throw new WeBaseFrontException(resJson.getStr("message"));
             }
+        } catch (WeBaseFrontException e) {
+            throw e;
         } catch (Exception e) {
             throw new WeBaseFrontException(e);
         }

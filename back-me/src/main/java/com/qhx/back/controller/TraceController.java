@@ -1,14 +1,14 @@
 package com.qhx.back.controller;
 
-import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import com.qhx.back.client.WeBaseClient;
 import com.qhx.back.context.AddressContext;
 import com.qhx.back.model.Result;
 import com.qhx.back.model.to.DistributorTo;
 import com.qhx.back.model.to.ProducerTo;
 import com.qhx.back.model.to.RetailerTo;
-import com.qhx.back.util.HttpUtil;
+import com.qhx.back.trace.TracePayloadParser;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +19,7 @@ import java.util.Arrays;
 @Api(tags = "溯源接口")
 public class TraceController {
     @Autowired
-    private HttpUtil httpUtil;
+    private WeBaseClient weBaseClient;
 
     // 获取详细溯源信息
     @GetMapping("/trace/detail/{traceNumber}")
@@ -44,81 +44,27 @@ public class TraceController {
     }
 
     private JSONObject getTraceDetail(String traceNumber) {
-        JSONObject result = new JSONObject();
-        result.set("traceNumber", traceNumber);
         JSONObject producer = getProducer(traceNumber);
         if (producer == null) {
             throw new RuntimeException("未找到该溯源信息");
         }
-        result.set("producer", producer);
-        JSONObject distributor = getDistributor(traceNumber);
-        if (distributor == null) {
-            result.set("distributor", new JSONObject());
-        } else {
-
-            result.set("distributor", distributor);
-        }
-        JSONObject retailer = getRetailer(traceNumber);
-        if (retailer == null) {
-            result.set("retailer", new JSONObject());
-        } else {
-            result.set("retailer", retailer);
-        }
-        return result;
+        return TracePayloadParser.assembleDetail(
+                traceNumber, producer, getDistributor(traceNumber), getRetailer(traceNumber));
     }
 
     private JSONObject getRetailer(String traceNumber) {
-        JSONArray retailerAgroFood = httpUtil.call("getAgroFoodInfoByRetailer", Arrays.asList(traceNumber));
-        JSONObject jsonObj = new JSONObject();
-        if (StrUtil.isBlank(retailerAgroFood.getStr(0))) {
-            return null;
-        }
-        jsonObj.set("traceNumber", traceNumber);
-        jsonObj.set("companyName", retailerAgroFood.getStr(0));
-        jsonObj.set("salePrice", retailerAgroFood.getLong(1));
-        jsonObj.set("saleQuantity", retailerAgroFood.getLong(2));
-        jsonObj.set("shelfLife", retailerAgroFood.getLong(3));
-        jsonObj.set("invoiceNo", retailerAgroFood.getStr(4));
-        jsonObj.set("saleTime", retailerAgroFood.getStr(5));
-        jsonObj.set("timestamp", retailerAgroFood.getLong(6));
-        return jsonObj;
+        JSONArray retailerAgroFood = weBaseClient.call("getAgroFoodInfoByRetailer", Arrays.asList(traceNumber));
+        return TracePayloadParser.parseRetailer(traceNumber, retailerAgroFood);
     }
 
     private JSONObject getDistributor(String traceNumber) {
-        JSONArray distributorAgroFood = httpUtil.call("getAgroFoodInfoByDistributor", Arrays.asList(traceNumber));
-        JSONObject jsonObj = new JSONObject();
-        if (StrUtil.isBlank(distributorAgroFood.getStr(0))) {
-            return null;
-        }
-        jsonObj.set("traceNumber", traceNumber);
-        jsonObj.set("companyName", distributorAgroFood.getStr(0));
-        jsonObj.set("storageCondition", distributorAgroFood.getStr(1));
-        jsonObj.set("transportMethod", distributorAgroFood.getStr(2));
-        jsonObj.set("distributeBatch", distributorAgroFood.getStr(3));
-        jsonObj.set("storageLocation", distributorAgroFood.getStr(4));
-        jsonObj.set("distributePrice", distributorAgroFood.getLong(5));
-        jsonObj.set("distributeQuantity", distributorAgroFood.getLong(6));
-        jsonObj.set("inspectionReport", distributorAgroFood.getStr(7));
-        jsonObj.set("timestamp", distributorAgroFood.getLong(8));
-        return jsonObj;
+        JSONArray distributorAgroFood = weBaseClient.call("getAgroFoodInfoByDistributor", Arrays.asList(traceNumber));
+        return TracePayloadParser.parseDistributor(traceNumber, distributorAgroFood);
     }
 
     private JSONObject getProducer(String traceNumber) {
-        JSONArray agroFoodInfo = httpUtil.call("getAgroFoodInfo", Arrays.asList(traceNumber));
-        JSONObject jsonObj = new JSONObject();
-        if (agroFoodInfo.size() == 1) {
-            return null;
-        }
-        jsonObj.set("traceNumber", traceNumber);
-        jsonObj.set("companyName", agroFoodInfo.getStr(0));
-        jsonObj.set("productName", agroFoodInfo.getStr(1));
-        jsonObj.set("productionLocation", agroFoodInfo.getStr(2));
-        jsonObj.set("variety", agroFoodInfo.getStr(3));
-        jsonObj.set("productionBatch", agroFoodInfo.getStr(4));
-        jsonObj.set("productionCert", agroFoodInfo.getStr(5));
-        jsonObj.set("productTime", agroFoodInfo.getStr(6));
-        jsonObj.set("timestamp", agroFoodInfo.getLong(7));
-        return jsonObj;
+        JSONArray agroFoodInfo = weBaseClient.call("getAgroFoodInfo", Arrays.asList(traceNumber));
+        return TracePayloadParser.parseProducer(traceNumber, agroFoodInfo);
     }
 
     // 生产者录入生产信息
@@ -126,7 +72,7 @@ public class TraceController {
     @ApiOperation(value = "生产者录入生产信息")
     public Result addProducer(@RequestBody ProducerTo producerTO) {
         String address = AddressContext.getAddress();
-        httpUtil.sendTransaction(
+        weBaseClient.sendTransaction(
                 address, "newAgroFood", Arrays.asList(
                         producerTO.getTraceNumber(),
                         producerTO.getCompanyName(),
@@ -160,7 +106,7 @@ public class TraceController {
     @ApiOperation(value = "分销商录分销信息")
     public Result addDistributor(@RequestBody DistributorTo distributorTO) {
         String address = AddressContext.getAddress();
-        httpUtil.sendTransaction(address, "addTraceInfoByDistributor", Arrays.asList(
+        weBaseClient.sendTransaction(address, "addTraceInfoByDistributor", Arrays.asList(
                 distributorTO.getTraceNumber(),
                 distributorTO.getCompanyName(),
                 distributorTO.getStorageCondition(),
@@ -196,7 +142,7 @@ public class TraceController {
     @ApiOperation(value = "零售商添加销售信息")
     public Result addRetailer(@RequestBody RetailerTo retailerTO) {
         String address = AddressContext.getAddress();
-        httpUtil.sendTransaction(address, "addTraceInfoByRetailer", Arrays.asList(
+        weBaseClient.sendTransaction(address, "addTraceInfoByRetailer", Arrays.asList(
                 retailerTO.getTraceNumber(),
                 retailerTO.getCompanyName(),
                 retailerTO.getSalePrice(),
@@ -227,7 +173,7 @@ public class TraceController {
 
 
     private JSONArray getFoodList() {
-        JSONArray call = httpUtil.call("getAgroFoodList");
+        JSONArray call = weBaseClient.call("getAgroFoodList");
         return call.getJSONArray(0);
     }
 

@@ -1,0 +1,138 @@
+{
+  "info": {
+    "name": "农产品溯源系统接口",
+    "description": "本地手工契约。条数以本文件 item 为准，不要写成 60+。未附带真实环境导出结果。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8010" },
+    { "key": "address", "value": "0x0000000000000000000000000000000000000001" },
+    { "key": "traceNumber", "value": "SY60202600001" }
+  ],
+  "item": [
+    {
+      "name": "白名单-溯源详情",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/trace/detail/{{traceNumber}}"
+      }
+    },
+    {
+      "name": "白名单-系统信息",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/getSystemInfo"
+      }
+    },
+    {
+      "name": "登录-地址角色校验",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"address\":\"{{address}}\",\"type\":\"0\"}"
+        },
+        "url": "{{baseUrl}}/login"
+      }
+    },
+    {
+      "name": "写接口-无 address",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"traceNumber\":\"{{traceNumber}}\"}"
+        },
+        "url": "{{baseUrl}}/producer/add"
+      }
+    },
+    {
+      "name": "写接口-非法 address",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "address", "value": "not-an-address" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"traceNumber\":\"{{traceNumber}}\"}"
+        },
+        "url": "{{baseUrl}}/producer/add"
+      }
+    },
+    {
+      "name": "生产上链",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "address", "value": "{{address}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"traceNumber\":\"{{traceNumber}}\",\"companyName\":\"农场A\",\"productName\":\"苹果\",\"productionLocation\":\"烟台\",\"variety\":\"红富士\",\"productionBatch\":\"B001\",\"productionCert\":\"QmCid\",\"productTime\":\"2026-01-01\"}"
+        },
+        "url": "{{baseUrl}}/producer/add"
+      }
+    },
+    {
+      "name": "分销追加",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "address", "value": "{{address}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"traceNumber\":\"{{traceNumber}}\",\"companyName\":\"仓配\",\"storageCondition\":\"冷藏\",\"transportMethod\":\"货车\",\"distributeBatch\":\"D01\",\"storageLocation\":\"济南\",\"distributePrice\":10,\"distributeQuantity\":100,\"inspectionReport\":\"QmReport\"}"
+        },
+        "url": "{{baseUrl}}/distributor/add"
+      }
+    },
+    {
+      "name": "零售追加",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "address", "value": "{{address}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"traceNumber\":\"{{traceNumber}}\",\"companyName\":\"门店\",\"salePrice\":20,\"saleQuantity\":5,\"shelfLife\":7,\"invoiceNo\":\"INV-1\",\"saleTime\":\"2026-02-01\"}"
+        },
+        "url": "{{baseUrl}}/retailer/add"
+      }
+    },
+    {
+      "name": "溯源列表-N+1",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "address", "value": "{{address}}" }],
+        "url": "{{baseUrl}}/trace/list"
+      }
+    },
+    {
+      "name": "无此溯源号",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/trace/detail/NOT-EXIST"
+      }
+    },
+    {
+      "name": "IoT看板",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "address", "value": "{{address}}" }],
+        "url": "{{baseUrl}}/api/iot/data?batchId={{traceNumber}}&limit=10"
+      }
+    }
+  ]
+}

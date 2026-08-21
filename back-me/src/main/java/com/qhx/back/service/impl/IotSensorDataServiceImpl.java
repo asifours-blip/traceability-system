@@ -2,6 +2,7 @@ package com.qhx.back.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.qhx.back.iot.IotSensorValidator;
 import com.qhx.back.model.IotSensorData;
 import com.qhx.back.mapper.IotSensorDataMapper;
 import com.qhx.back.service.IotSensorDataService;
@@ -10,6 +11,12 @@ import java.util.List;
 
 @Service
 public class IotSensorDataServiceImpl extends ServiceImpl<IotSensorDataMapper, IotSensorData> implements IotSensorDataService {
+
+    @Override
+    public boolean save(IotSensorData entity) {
+        IotSensorValidator.requireValid(entity);
+        return super.save(entity);
+    }
 
     @Override
     public List<IotSensorData> getLatestByBatchId(String batchId, int limit) {

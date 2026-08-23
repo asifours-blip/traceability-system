@@ -35,7 +35,7 @@ Trace(address producer, address distributor, address retailer)
 - `addTraceInfoByDistributor` → `onlyDistributor`，溯源号必须已存在
 - `addTraceInfoByRetailer` → `onlyRetailer`，溯源号必须已存在
 
-Java 层 `/add/user`、`/delete/user` 另外校验 `AddressContext` 等于配置里的 `contract.owner`。面试时分开说：链上是角色 modifier，后台管理是 owner 地址头。
+Java 层 `/add/user`、`/delete/user` 另外校验 `AddressContext` 等于配置里的 `contract.owner`。两层需要分开表述：链上是角色 modifier，后台管理是 owner 地址头。
 
 ## 流转顺序
 

@@ -63,7 +63,7 @@ code1.1.3/
 ├── front-me/                      # Vue 2.6
 ├── contracts/                     # Solidity 源码（见该目录 README）
 │   └── abi/Trace.json             # 从 application.yml 抽出的运行时 ABI
-├── docs/                          # 证据、架构、面试口径
+├── docs/                          # 证据、架构、设计说明
 └── .github/workflows/             # ci.yml（测试）+ code-review.yml（手动评审）
 ```
 
@@ -122,7 +122,7 @@ npm run lint
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
 - **没有** `getAgroFoodListDetail`：`GET /trace/list` 对每个编号再打 3 次链查询（N+1），这是已知限制，不是「只查 3 条」的优化
 
-## 鉴权（请勿写成 JWT）
+## 鉴权方式（address 请求头，非 JWT）
 
 | 事实 | 位置 |
 |------|------|
@@ -132,7 +132,7 @@ npm run lint
 | 前端把 `userInfo.address` 塞进 header | `front-me/src/utils/request.js` |
 | 登录只调合约 `isProducer` 等，**不签发 token** | `UserController.login` |
 
-## IoT（请勿写成真实传感器）
+## IoT 数据（定时模拟任务，非真实传感器）
 
 `IotDataSimulatorTask` 固定批次 `SY60202600001~3`，在量程内随机生成温度 15–35℃、湿度 30–90%、光照 0–1000 lux，每 5 分钟调用 `IotSensorDataService.save`。看板读这张 MySQL 表。
 
@@ -145,7 +145,7 @@ npm run lint
 | `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 不读密钥、不连 FISCO/IPFS；**GitHub 上是否绿要等 push 后的 Actions run** |
 | `.github/workflows/code-review.yml` | 仅 `workflow_dispatch` 手动评审 | 非门禁；自动触发已停用 |
 
-## 已知限制（面试用）
+## 已知限制
 
 1. `/trace/list` N+1 链查询（合约没有批量详情接口）
 2. 鉴权失败仍 HTTP 200 + body `code=400`（前端按 2xx 解析）

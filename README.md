@@ -2,7 +2,7 @@
 
 毕业设计项目：用 **FISCO BCOS 联盟链** 记录农产品「生产者 → 分销商 → 零售商」流转，证书/检测报告等大文件走 **IPFS**（链上只存 CID），消费者扫码查看。后端经 **WeBASE-Front** 调合约，不直连 Java SDK。
 
-本仓库当前定位是 **可核查的测试实践底稿**，不是生产系统：所有测试与 CI 声明都能回到仓库文件复现。
+本仓库当前定位是 **可核查的测试实践底稿**，不是生产系统，也不是「我部署了一条公链」：所有测试与 CI 声明都能回到仓库文件复现。
 
 ## 功能特性（以代码为准）
 
@@ -13,7 +13,7 @@
 - **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单）
 - **地址头鉴权**：请求头 `address`（`AddressInterceptor` + 前端 `src/utils/request.js`）。**不是 JWT**，仓库里没有 token 签发
 - **离线测试门禁**：Mock `WeBaseClient`，Maven 单测不连链；前端 ESLint
-- **AI PR 评审**：`.github/workflows/ai-review.yml` 在 PR 时调 Claude Code / DeepSeek。依赖 `secrets.DEEPSEEK_API_KEY`，**不是**编译/测试门禁
+- **代码评审 workflow**：`.github/workflows/code-review.yml` 仅手动触发，不是编译/测试门禁
 
 ## 技术栈
 
@@ -23,7 +23,7 @@
 | 前端 | Vue 2.6 · Element UI 2.15 · Vuex · Vue Router · ECharts 6 · qrcode · axios |
 | 区块链 | FISCO BCOS · WeBASE-Front · Solidity `^0.4.25` 合约 `Trace` |
 | 存储 | IPFS（kubo）；链下表 `iot_sensor_data` |
-| 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml` + `ai-review.yml`） |
+| 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml` + `code-review.yml`） |
 
 ## 系统架构
 
@@ -64,7 +64,7 @@ code1.1.3/
 ├── contracts/                     # Solidity 源码（见该目录 README）
 │   └── abi/Trace.json             # 从 application.yml 抽出的运行时 ABI
 ├── docs/                          # 证据、架构、面试口径
-└── .github/workflows/             # ci.yml（测试）+ ai-review.yml
+└── .github/workflows/             # ci.yml（测试）+ code-review.yml（手动评审）
 ```
 
 ## 快速开始
@@ -143,7 +143,7 @@ npm run lint
 | Workflow | 作用 | 注意 |
 |----------|------|------|
 | `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 不读密钥、不连 FISCO/IPFS；**GitHub 上是否绿要等 push 后的 Actions run** |
-| `.github/workflows/ai-review.yml` | PR 时 AI 中文评审 | 依赖 `secrets.DEEPSEEK_API_KEY`，不是测试门禁 |
+| `.github/workflows/code-review.yml` | 仅 `workflow_dispatch` 手动评审 | 非门禁；自动触发已停用 |
 
 ## 已知限制（面试用）
 
@@ -152,8 +152,4 @@ npm run lint
 3. 地址合法性只检查 `0x` + 长度 42，无 checksum、无 EIP-55
 4. Solidity `^0.4.25`，未接 Foundry CI
 5. CORS 只在 `WebConfig` 放行 `localhost` / `127.0.0.1`（已去掉 `*` + Credentials；拦截器不再写 CORS 头）
-6. 无「时序缺陷」复现文档——简历不要写「发现 2 个同步时序问题」
-
-## 说明
-
 

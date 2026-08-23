@@ -1,8 +1,9 @@
-name: AI Code Review
+name: Code Review
 
+# 非测试门禁。Claude Code 不认 ANTHROPIC_MODEL=deepseek-v4-pro，
+# pull_request 自动跑会在 Actions 留红叉。暂停自动触发，需要时手动跑。
 on:
-  pull_request:
-    types: [opened, synchronize]
+  workflow_dispatch:
 
 jobs:
   claude-review:
@@ -23,7 +24,7 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: AI Review
+      - name: Code Review
         env:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
           ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic"

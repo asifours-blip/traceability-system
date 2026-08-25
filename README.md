@@ -153,3 +153,4 @@ npm run lint
 4. Solidity `^0.4.25`，未接 Foundry CI
 5. CORS 只在 `WebConfig` 放行 `localhost` / `127.0.0.1`（已去掉 `*` + Credentials；拦截器不再写 CORS 头）
 
+生产边界、为何 `address` 请求头不能作为生产鉴权、以及身份认证/依赖/合约测试的整改优先级见 [docs/production-boundaries.md](docs/production-boundaries.md)。

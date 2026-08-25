@@ -20,7 +20,7 @@
 
 ### P1：依赖与交付链路
 
-1. 为 Spring Boot、Vue、FastJSON、Solidity 编译器和本地 JAR 依赖建立可审计的升级/替换清单；升级前先做兼容性与漏洞评估，不把“版本变新”误当成安全修复。
+1. FastJSON 已移除；为 Spring Boot、Vue、Solidity 编译器和本地 JAR 依赖建立可审计的升级/替换清单；升级前先做兼容性与漏洞评估，不把“版本变新”误当成安全修复。
 2. 移除或替换难以复现的 `systemPath` 本地 JAR 依赖，使用受版本锁定和来源可验证的依赖管理方式。
 3. CI 除 `mvn test` 与前端 lint 外，补前端 production build、依赖漏洞扫描/SBOM 与构建产物保存。
 

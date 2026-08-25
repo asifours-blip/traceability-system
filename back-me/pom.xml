@@ -93,12 +93,6 @@
 			<artifactId>spring-boot-starter</artifactId>
 		</dependency>
 
-		<!-- 如果还没有 fastjson 或 jackson，已有则无需添加 -->
-		<dependency>
-			<groupId>com.alibaba</groupId>
-			<artifactId>fastjson</artifactId>
-			<version>1.2.83</version>
-		</dependency>
 		<!-- MyBatis-Plus 依赖 -->
 		<dependency>
 			<groupId>com.baomidou</groupId>

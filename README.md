@@ -19,7 +19,7 @@
 
 | 层 | 技术 |
 |----|------|
-| 后端 | Spring Boot 2.6.13 · MyBatis-Plus 3.5.3 · MySQL · Springfox 3.0 · Hutool · FastJSON |
+| 后端 | Spring Boot 2.6.13 · MyBatis-Plus 3.5.3 · MySQL · Springfox 3.0 · Hutool |
 | 前端 | Vue 2.6 · Element UI 2.15 · Vuex · Vue Router · ECharts 6 · qrcode · axios |
 | 区块链 | FISCO BCOS · WeBASE-Front · Solidity `^0.4.25` 合约 `Trace` |
 | 存储 | IPFS（kubo）；链下表 `iot_sensor_data` |

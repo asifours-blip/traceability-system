@@ -13,7 +13,6 @@
 - **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单）
 - **地址头鉴权**：请求头 `address`（`AddressInterceptor` + 前端 `src/utils/request.js`）。**不是 JWT**，仓库里没有 token 签发
 - **离线测试门禁**：Mock `WeBaseClient`，Maven 单测不连链；前端 ESLint
-- **代码评审 workflow**：`.github/workflows/code-review.yml` 仅手动触发，不是编译/测试门禁
 
 ## 技术栈
 
@@ -23,7 +22,7 @@
 | 前端 | Vue 2.6 · Element UI 2.15 · Vuex · Vue Router · ECharts 6 · qrcode · axios |
 | 区块链 | FISCO BCOS · WeBASE-Front · Solidity `^0.4.25` 合约 `Trace` |
 | 存储 | IPFS（kubo）；链下表 `iot_sensor_data` |
-| 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml` + `code-review.yml`） |
+| 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml`） |
 
 ## 系统架构
 
@@ -64,7 +63,7 @@ code1.1.3/
 ├── contracts/                     # Solidity 源码（见该目录 README）
 │   └── abi/Trace.json             # 从 application.yml 抽出的运行时 ABI
 ├── docs/                          # 证据、架构、设计说明
-└── .github/workflows/             # ci.yml（测试）+ code-review.yml（手动评审）
+└── .github/workflows/             # ci.yml（测试）
 ```
 
 ## 快速开始
@@ -143,7 +142,10 @@ npm run lint
 | Workflow | 作用 | 注意 |
 |----------|------|------|
 | `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 不读密钥、不连 FISCO/IPFS；**GitHub 上是否绿要等 push 后的 Actions run** |
-| `.github/workflows/code-review.yml` | 仅 `workflow_dispatch` 手动评审 | 非门禁；自动触发已停用 |
+
+## 仓库历史与命名
+
+这是江西农业大学软件工程专业毕业设计的完整入库；`back-me`、`front-me` 与 `com.qhx` 是当时的课程项目命名，为避免破坏构建与既有说明而保留。首个公开提交是完整项目导入，不应被理解为线上迭代节奏。
 
 ## 已知限制
 

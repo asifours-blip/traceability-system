@@ -48,15 +48,15 @@ class AddressInterceptorTest {
     }
 
     @Test
-    void 写接口缺address_拒绝且HTTP仍为200() throws Exception {
+    void 写接口缺address_拒绝且HTTP为401() throws Exception {
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/producer/add");
         MockHttpServletResponse resp = new MockHttpServletResponse();
         assertFalse(interceptor.preHandle(req, resp, new Object()));
-        assertEquals(200, resp.getStatus());
+        assertEquals(401, resp.getStatus());
         String body = resp.getContentAsString();
         assertTrue(body.contains("address"), body);
         assertFalse(body.contains("adddress"), body);
-        assertTrue(body.contains("400"), body);
+        assertTrue(body.contains("\"code\":401"), body);
     }
 
     @Test
@@ -65,8 +65,10 @@ class AddressInterceptorTest {
         req.addHeader("address", "not-an-address");
         MockHttpServletResponse resp = new MockHttpServletResponse();
         assertFalse(interceptor.preHandle(req, resp, new Object()));
+        assertEquals(401, resp.getStatus());
         assertTrue(resp.getContentAsString().contains("address"));
         assertFalse(resp.getContentAsString().contains("adddress"));
+        assertTrue(resp.getContentAsString().contains("\"code\":401"));
     }
 
     @Test

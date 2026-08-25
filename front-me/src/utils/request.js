@@ -29,7 +29,11 @@ instance.interceptors.response.use(
         return success.data;
     },
     (error) => {
-
+        if (error.response && error.response.status === 401) {
+            const message = '未认证：请先登录或检查地址身份'
+            Message.error(message)
+            return { code: 401, mes: message }
+        }
         console.log(error);
         Message.error(error)
         return {  code: 500, mes: '服务器错误'}

@@ -42,21 +42,21 @@ public class AddressInterceptor implements HandlerInterceptor {
         }
         String address = request.getHeader("address");
         if (StrUtil.isEmpty(address)) {
-            handlerErrorResponse(response, "请求头 address 为空");
+            handlerErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "请求头 address 为空");
             return false;
         }
         if (!UserAddressUtil.isLegalAddress(address)) {
-            handlerErrorResponse(response, "请求头 address 不合法");
+            handlerErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "请求头 address 不合法");
             return false;
         }
         AddressContext.setAddress(address);
         return true;
     }
 
-    public void handlerErrorResponse(HttpServletResponse response, String mes) throws IOException {
+    public void handlerErrorResponse(HttpServletResponse response, int status, String mes) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.getWriter().write(JSONUtil.toJsonStr(Result.error(mes)));
+        response.setStatus(status);
+        response.getWriter().write(JSONUtil.toJsonStr(new Result(null, mes, status)));
     }
 
     @Override

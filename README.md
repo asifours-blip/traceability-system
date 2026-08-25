@@ -127,7 +127,7 @@ npm run lint
 | 事实 | 位置 |
 |------|------|
 | 写接口读请求头 `address` | `AddressInterceptor` |
-| 非法/空地址拒绝，HTTP **仍 200**，body `code=400` | 同上 |
+| 空/非法地址拒绝，HTTP `401`，body `code=401` | 同上 |
 | 白名单：`/login,/register,/getContractOwner,/getSystemInfo,/trace/detail` | `application.yml` → `allow.paths` |
 | 前端把 `userInfo.address` 塞进 header | `front-me/src/utils/request.js` |
 | 登录只调合约 `isProducer` 等，**不签发 token** | `UserController.login` |
@@ -148,7 +148,7 @@ npm run lint
 ## 已知限制
 
 1. `/trace/list` N+1 链查询（合约没有批量详情接口）
-2. 鉴权失败仍 HTTP 200 + body `code=400`（前端按 2xx 解析）
+2. 空/非法 `address` 已返回 HTTP 401 + body `code=401`；身份仍只依赖可伪造的地址头，不是 JWT
 3. 地址合法性只检查 `0x` + 长度 42，无 checksum、无 EIP-55
 4. Solidity `^0.4.25`，未接 Foundry CI
 5. CORS 只在 `WebConfig` 放行 `localhost` / `127.0.0.1`（已去掉 `*` + Credentials；拦截器不再写 CORS 头）

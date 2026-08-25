@@ -24,6 +24,20 @@
 | 存储 | IPFS（kubo）；链下表 `iot_sensor_data` |
 | 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml`） |
 
+### IPFS 本地 JAR（非 Maven Central）
+
+后端用 `systemPath` 引用 `back-me/libs/` 下的 IPFS Java HTTP 客户端及其传递依赖，**不是** Maven Central 上的正式坐标，CI/本地编译都依赖这些文件存在。
+
+| 文件 | SHA-256 |
+|---|---|
+| `ipfs.jar` | `89F3F534FAFCCEBB7BB6853C8EF41DF449CF95F17E8549F284C602859DE891B3` |
+| `cid.jar` | `7FA2B60290B6ACDCEEA650EBEB3EE3E43D9B90F037D82C39830397C60D56B362` |
+| `multiaddr.jar` | `2B16FEF9280CE61A561100F06229B7903864660912F5D08EF9F4B8CF9A37FD5F` |
+| `multibase.jar` | `D459DBB9B2C2CBD19092A19C3BD417F8E3DA9A6D3B0169B413CCC8CACD60E3DA` |
+| `multihash.jar` | `42D15EC293C0B0BD51F405B90A138DB06791C5304251AEBB833A61B14D426ABD` |
+
+来源：毕业设计当时纳入的 IPFS Java HTTP client 本地包；本轮只删除了未被 POM 引用的 `junit-4.12.jar` 与 `hamcrest-core-1.3.jar`。不要把上述五个 JAR 当成可替换的 Maven 依赖，除非先做兼容性验证。
+
 ## 系统架构
 
 ```
@@ -141,7 +155,7 @@ npm run lint
 
 | Workflow | 作用 | 注意 |
 |----------|------|------|
-| `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 不读密钥、不连 FISCO/IPFS；**GitHub 上是否绿要等 push 后的 Actions run** |
+| `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 离线 `mvn -B test` + `npm run lint`；不连 FISCO/IPFS。默认分支 CI 以 Actions 为准。 |
 
 ## 仓库历史与命名
 

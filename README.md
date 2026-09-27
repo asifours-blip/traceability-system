@@ -104,8 +104,9 @@ cp application-local.yml.example application-local.yml
 ### 账号初始化
 
 ```bash
-# 1. 建账号表与会话表（库名与 MYSQL_DB 一致，默认 mysql；可重复执行）
+# 1. 建账号表、会话表与交易记录表（库名与 MYSQL_DB 一致，默认 mysql；可重复执行）
 mysql -u root -p mysql < back-me/src/main/resources/db/auth-schema.sql
+mysql -u root -p mysql < back-me/src/main/resources/db/chain-tx-schema.sql
 
 # 2. 首次启动时注入管理员（库里已有 ADMIN 时不会覆盖）
 export ADMIN_INITIAL_PASSWORD='<至少 8 位，自行生成>'
@@ -137,7 +138,11 @@ cd front-me
 npm run lint
 ```
 
-用例清单与最近一次本地结果见 [docs/test_report.md](docs/test_report.md)。Postman 手工集合 11 条：[docs/artifacts/](docs/artifacts/)。**不是 Pytest，不是 60+。**
+用例清单与最近一次本地结果见 [docs/test_report.md](docs/test_report.md)。
+
+### 本地隔离链（真实 FISCO BCOS + WeBASE-Front，可选）
+
+在 WSL Ubuntu 中执行 `bash scripts/local-chain/run-all.sh`：搭 4 节点 FISCO BCOS 2.7.2 与 WeBASE-Front v1.5.5 副本（独立目录与端口，不碰原有链），部署 v2 合约，跑完整三阶段与越权/乱序/重复反例、共识停滞场景，并用后端代码直连同一条链。WeBASE-Front 接口契约与运行记录见 [docs/webase-front-contract.md](docs/webase-front-contract.md) 与 [docs/artifacts/](docs/artifacts/)。Postman 手工集合 11 条：[docs/artifacts/](docs/artifacts/)。**不是 Pytest，不是 60+。**
 
 ## 智能合约
 
@@ -158,6 +163,7 @@ npm run lint
 | 表 `user_account`（角色、绑定链上地址、启用状态）与 `user_session`（token 的 sha256、过期时间、是否撤销） | `db/auth-schema.sql` |
 | 拦截器按 `Authorization: Bearer` 查会话，把**账号绑定的地址**写入 `AddressContext`；客户端 `address` 头忽略 | `AddressInterceptor` |
 | `WeBaseClient.sendTransaction` 不接受签名地址参数，只用 `AddressContext` | `HttpUtil` |
+| 交易先写 `chain_tx` 再发；回执 `status=0x0` 才算成功，超时/中断/5xx 记为 UNKNOWN 不自动重发，`POST /chain-tx/{id}/verify` 查证 | `ChainTxService`，见 [docs/tx-lifecycle.md](docs/tx-lifecycle.md) |
 | 无 token / 过期 / 已撤销 / 账号停用 → HTTP 401；角色不符 → HTTP 403 | `AddressInterceptor` + `@RequireRole` |
 | 生产/分销/零售写接口只允许对应角色；用户管理、系统信息写入只允许 ADMIN；合约 `onlyProducer` 等保留为第二道防线 | `TraceController` / `UserController` / `SystemInfoController` |
 | 免登录：`/login,/getSystemInfo,/trace/detail/**`（Ant 精确匹配） | `application.yml` → `allow.paths` |

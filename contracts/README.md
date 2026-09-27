@@ -10,7 +10,7 @@
 - `code1.1.3` 仓库原先 **没有** `.sol`，后端只在 `application.yml` 内嵌 ABI，经 WeBASE-Front 调用
 - v1 源码复制自同课题早期本地目录 `code1.1/contracts-me/`；用本目录的编译脚本编译 v1 源码，得到的 ABI 与 v1 的 `abi/Trace.json` 逐项一致
 - **不能**声称 v1 源码就是链上已部署字节码的逐字节还原——没有从节点导出的 bytecode 对照
-- v2 只在 Hardhat 进程内 EVM 上测试过，**没有**部署到真实 FISCO BCOS 节点验证
+- v2 在 Hardhat 进程内 EVM 上有完整测试；另外已部署到**本地隔离的** FISCO BCOS 2.7.2 四节点链（经 WeBASE-Front v1.5.5），跑通授权 → 生产 → 分销 → 零售，越权、乱序、重复写入均在链上被拒，记录见 `docs/artifacts/local-chain-smoke-2026-09-28.md`。没有在生产或多机环境部署过
 
 ## 文件
 
@@ -158,7 +158,7 @@ npm run test:legacy # 对 v1 源码跑同一套测试（需要完整 git 历史�
 - 链上只保证「谁、按什么顺序、写了一次」，不验证数据内容本身的真实性（证书、质检报告等只是存了 hash/CID）。
 - 查询仍是 N+1：`getAgroFoodList()` 只返回溯源号数组，后端对每个号再调三次查询；列表没有分页。
 - `pragma experimental ABIEncoderV2` 在 0.4.25 中仍是实验特性（`getAgroFoodList` 返回 `string[]` 需要它），沿用 v1 的选择以保持 ABI 兼容。
-- 未在真实 FISCO BCOS 链上部署验证。
+- 只在本地隔离链（单机 4 节点，`scripts/local-chain/`）上部署验证过，未在生产或多机环境验证。
 
 ## 调用路径
 

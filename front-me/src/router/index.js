@@ -15,11 +15,6 @@ const routes = [
         component: () => import('@/views/Login.vue')
     },
     {
-        path: '/register',
-        name: 'register',
-        component: () => import('@/views/Register.vue')
-    },
-    {
         path: '/admin',
         name: 'admin',
         component: () => import('@/views/admin/index.vue'),
@@ -46,7 +41,7 @@ const routes = [
                 name: 'role',
                 component: () => import('@/views/admin/views/Role.vue'),
                 meta: {
-                    title: '角色分配',
+                    title: '用户管理',
                 }
             },
         ]
@@ -139,13 +134,21 @@ const router = new VueRouter({
 
 // 全局前置守卫：权限控制
 router.beforeEach((to, from, next) => {
-    // 获取用户角色类型（0:生产商,1:分销商,2:零售商,3:消费者,4:管理员）
+    // 获取用户角色类型（0:生产商,1:分销商,2:零售商,4:管理员）
+    // 这里只决定页面跳转，真正的鉴权在后端（token + 角色）
+    const token = localStorage.getItem('token')
     const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
     const userType = userInfo.type // 字符串 '0'~'4'
 
-    // 未登录时允许访问登录和注册页
-    if (!userType && to.path !== '/login' && to.path !== '/register') {
-        next('/login')
+    // 未登录只能访问登录页和消费者溯源查询（对应后端免登录的 /trace/detail）
+    if (!token || !userType) {
+        const anonymousAllowed = to.path === '/login' || to.path === '/trace'
+            || to.path.startsWith('/traceDetail/') || to.path.startsWith('/qrcodeTrace/')
+        if (anonymousAllowed) {
+            next()
+        } else {
+            next('/login')
+        }
         return
     }
     const roleNameMap = {
@@ -162,7 +165,7 @@ router.beforeEach((to, from, next) => {
     const publicRoutes = [
         '/trace', '/traceList', '/iot-dashboard', '/userCenter',
         '/traceDetail', '/qrcodeTrace',
-        '/login', '/register'
+        '/login'
     ]
     // 生产商专属路由
     const producerRoutes = ['/producer']

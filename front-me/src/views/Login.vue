@@ -9,15 +9,14 @@
       </div>
 
       <el-form :model="loginForm" :rules="rules" ref="loginForm" class="login-form">
-        <el-form-item prop="type" class="form-item">
-          <el-select v-model="loginForm.type" placeholder="选择用户类型" class="type-select">
-            <el-option v-for="item in options" :key="item.value" :label="item.label" :value="item.value">
-            </el-option>
-          </el-select>
+        <el-form-item prop="username" class="form-item">
+          <el-input v-model="loginForm.username" placeholder="用户名" class="custom-input">
+          </el-input>
         </el-form-item>
 
-        <el-form-item prop="address" v-if="loginForm.type !== '3'" class="form-item">
-          <el-input v-model="loginForm.address" placeholder="输入用户地址" class="custom-input">
+        <el-form-item prop="password" class="form-item">
+          <el-input v-model="loginForm.password" type="password" show-password placeholder="密码" class="custom-input"
+            @keyup.enter.native="submitForm('loginForm')">
           </el-input>
         </el-form-item>
 
@@ -25,8 +24,9 @@
           <el-button type="primary" @click="submitForm('loginForm')" class="submit-btn">
             登录
           </el-button>
-          <el-button @click="goRegister" class="register-btn">
-            注册账号
+          <!-- 账号由管理员创建，不提供公开注册；消费者查询溯源无需登录 -->
+          <el-button @click="goTrace" class="register-btn">
+            溯源查询（免登录）
           </el-button>
         </div>
       </el-form>
@@ -37,87 +37,44 @@
 
 <script>
 import { login } from '@/apis/user'
-import { localStorageService } from '@/utils/commonUtil';
-import { getContractOwner } from '@/apis/owner'
+import { saveLogin } from '@/utils/auth';
 
 export default {
   name: 'login-view',
   data() {
     return {
       loginForm: {
-        address: '',
-        type: ''
+        username: '',
+        password: ''
       },
       rules: {
-        address: [
-          { required: true, message: '请输入用户地址', trigger: 'blur' },
+        username: [
+          { required: true, message: '请输入用户名', trigger: 'blur' },
         ],
-        type: [
-          { required: true, message: '请输入用户类型', trigger: 'blur' },
+        password: [
+          { required: true, message: '请输入密码', trigger: 'blur' },
         ],
-      },
-      options: [
-        {
-          value: '0',
-          label: '生产商'
-        },
-        {
-          value: '1',
-          label: '分销商'
-        },
-        {
-          value: '2',
-          label: '零售商'
-        },
-        {
-          value: '3',
-          label: '消费者'
-        },
-        {
-          value: '4',
-          label: '管理员'
-        }
-      ]
+      }
     };
   },
   methods: {
-    async submitForm(formName) {
-      let { type } = this.loginForm
-      if (type === '3') {
-        const { data } = await getContractOwner()
-        this.loginForm.address = data.owner
-        localStorageService.setItem('userInfo', this.loginForm)
-        this.$message.success('登录成功')
-        this.$router.push('/userCenter')
-        return
-      }
-      if (type === '4') {
-        const { data } = await getContractOwner()
-        if (data.owner !== this.loginForm.address)
-          return this.$message.error('您不是管理员')
-        localStorageService.setItem('userInfo', this.loginForm)
-        this.$router.push('/admin')
-        return
-      }
-
+    submitForm(formName) {
       this.$refs[formName].validate(async (valid) => {
-        if (valid) {
-          const { code,mes } = await login(this.loginForm)
-          if (code == 200) {
-            this.$message.success('登录成功')
-            localStorageService.setItem('userInfo', this.loginForm)
-            this.$router.push('/userCenter')
-          }else{
-            this.$message.error(mes)
-          }
-        } else {
-          console.log('登录失败!');
+        if (!valid) {
           return false;
         }
+        const { code, mes, data } = await login(this.loginForm)
+        if (code != 200) {
+          this.$message.error(mes)
+          return
+        }
+        saveLogin(data)
+        this.$message.success('登录成功')
+        this.$router.push(data.user.role === 'ADMIN' ? '/admin' : '/userCenter')
       });
     },
-    goRegister() {
-      this.$router.push('/register')
+    goTrace() {
+      this.$router.push('/trace')
     },
   }
 };

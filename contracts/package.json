@@ -1,0 +1,21 @@
+{
+  "name": "traceability-contracts",
+  "private": true,
+  "version": "2.0.0",
+  "description": "FISCO BCOS 农产品溯源合约：编译与离线测试",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "compile": "node --stack-size=4000 scripts/compile.js",
+    "abi": "node --stack-size=4000 scripts/compile.js --write-abi",
+    "test": "npm run compile && hardhat test --no-compile",
+    "test:legacy": "node scripts/test-legacy.js"
+  },
+  "devDependencies": {
+    "ethers": "6.17.0",
+    "hardhat": "2.29.1",
+    "solc": "0.4.25"
+  }
+}

@@ -143,9 +143,10 @@ npm run lint
 
 源码在 [`contracts/`](contracts/README.md)。`code1.1.3` 原先没有 `.sol`；现有文件来自同课题早期目录 `code1.1/contracts-me`，函数名已与运行时 ABI（`contracts/abi/Trace.json`）对齐。
 
-- **角色**：`addProducer` / `addDistributor` / `addRetailer` 在合约里是 `onlyProducer` 等（已有该角色的人可再添加），不是独立的 `onlyOwner` modifier。部署时构造函数把 `msg.sender` 加进三个角色
-- **生产**：`newAgroFood(...)`，`onlyProducer`；溯源号不可重复
-- **流转**：分销/零售追加信息；溯源号必须已存在
+- **角色**：部署者为 owner，只有 owner 能 `addProducer` / `addDistributor` / `addRetailer` 与 `removeProducer` / `removeDistributor` / `removeRetailer`；owner 自身不持有业务角色，持有者只能 `renounce*` 放弃自己的角色
+- **生产**：`newAgroFood(...)`，`onlyProducer`；溯源号非空且不可重复
+- **流转**：严格按 生产 → 分销 → 零售 的顺序，每个阶段只能写一次；条目合约 `AgroFoodInfoItem` 只接受 `Trace` 写入，无法绕过角色与阶段检查
+- **旧合约**：早期部署（v1）的 setter 无访问控制、角色可自我扩散，这些漏洞在已部署的旧合约上仍然存在；v2 需要重新部署，旧数据不迁移。详见 [contracts/README.md](contracts/README.md)
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
 - **没有** `getAgroFoodListDetail`：`GET /trace/list` 对每个编号再打 3 次链查询（N+1），这是已知限制，不是「只查 3 条」的优化
 

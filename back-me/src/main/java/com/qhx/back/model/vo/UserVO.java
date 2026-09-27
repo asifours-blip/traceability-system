@@ -1,5 +1,6 @@
 package com.qhx.back.model.vo;
 
+import com.qhx.back.model.AccountRoleGrant;
 import com.qhx.back.model.UserAccount;
 import lombok.Data;
 
@@ -18,6 +19,22 @@ public class UserVO
     private String companyName;
     private Boolean enabled;
     private Date createdAt;
+    // 链上角色授权状态：GRANTED_BY_TX / ALREADY_ON_CHAIN / PENDING；管理员与历史账号为空
+    private String roleState;
+    // 授权交易记录 id（PENDING 时用于查证）
+    private Long roleTxId;
+    private String roleNote;
+
+    public static UserVO of(UserAccount account, AccountRoleGrant grant)
+    {
+        UserVO vo = of(account);
+        if (grant != null) {
+            vo.setRoleState(grant.getState());
+            vo.setRoleTxId(grant.getTxId());
+            vo.setRoleNote(grant.getNote());
+        }
+        return vo;
+    }
 
     public static UserVO of(UserAccount account)
     {

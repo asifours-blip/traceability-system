@@ -52,7 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql",
+        "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
         "auth.bootstrap-admin.username=admin",
         "auth.bootstrap-admin.password=" + AuthIntegrationTest.ADMIN_PASSWORD,
         "auth.bootstrap-admin.address=" + AuthIntegrationTest.ADMIN_ADDRESS,
@@ -99,9 +99,13 @@ class AuthIntegrationTest {
         }
     }
 
+    // 生产信息必须指定下游分销商（后端规则），每个用例准备一个
+    private String distributorUsername;
+
     @BeforeEach
     void resetFake() {
         fakeWeBase.reset();
+        distributorUsername = seedUser(UserRole.DISTRIBUTOR).getUsername();
     }
 
     // ---------- 身份来源 ----------
@@ -146,7 +150,7 @@ class AuthIntegrationTest {
 
     @Test
     void 无token返回401() throws Exception {
-        MvcResult result = mvc.perform(get("/trace/list")).andExpect(status().isUnauthorized()).andReturn();
+        MvcResult result = mvc.perform(get("/batches")).andExpect(status().isUnauthorized()).andReturn();
         assertEquals(401, json(result).getInt("code"));
         assertTrue(fakeWeBase.requests().isEmpty());
     }
@@ -241,16 +245,18 @@ class AuthIntegrationTest {
     void 管理员新建用户_签名地址是管理员地址() throws Exception {
         String adminToken = login("admin", ADMIN_PASSWORD);
         String newAddress = nextAddress();
-        String username = "dist_" + SEQ.incrementAndGet();
+        String username = "prod_" + SEQ.incrementAndGet();
+        // 链上还没有该角色，才会发授权交易（已有角色时跳过，见 BusinessFlowTestBase）
+        fakeWeBase.on("isProducer", r -> FakeWeBaseFront.json(200, "[false]"));
         // 夹带 signer/roleAddress/address，验证不会被当成签名地址
         String extra = "\"signer\":\"" + FORGED + "\",\"roleAddress\":\"" + FORGED + "\",\"address\":\"" + FORGED + "\",";
 
         JSONObject body = perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON)
-                .content(createUserBody(username, UserRole.DISTRIBUTOR, newAddress, extra)), adminToken, 200);
+                .content(createUserBody(username, UserRole.PRODUCER, newAddress, extra)), adminToken, 200);
         assertEquals(200, body.getInt("code"), body.toString());
         assertFalse(body.getJSONObject("data").containsKey("passwordHash"));
 
-        List<FakeWeBaseFront.Request> tx = fakeWeBase.requestsFor("addDistributor");
+        List<FakeWeBaseFront.Request> tx = fakeWeBase.requestsFor("addProducer");
         assertEquals(1, tx.size());
         assertEquals(ADMIN_ADDRESS, tx.get(0).user);
         assertEquals(Collections.singletonList(newAddress), tx.get(0).params.toList(String.class));
@@ -258,9 +264,8 @@ class AuthIntegrationTest {
         // 新用户登录后，业务交易用的是自己绑定的地址
         fakeWeBase.reset();
         String userToken = login(username, USER_PASSWORD);
-        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"traceNumber\":\"SY1\",\"distributePrice\":1,\"distributeQuantity\":1}"), userToken, 200);
-        assertEquals(newAddress, fakeWeBase.requestsFor("addTraceInfoByDistributor").get(0).user);
+        perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(producerBody("")), userToken, 200);
+        assertEquals(newAddress, fakeWeBase.requestsFor("newAgroFood").get(0).user);
     }
 
     @Test
@@ -291,8 +296,9 @@ class AuthIntegrationTest {
         MvcResult info = mvc.perform(get("/getSystemInfo")).andExpect(status().isOk()).andReturn();
         assertEquals("溯源系统", json(info).getJSONObject("data").getStr("name"));
 
-        MvcResult detail = mvc.perform(get("/trace/detail/SY-none")).andExpect(status().isOk()).andReturn();
-        assertNotEquals(401, json(detail).getInt("code"));
+        // 免登录：不存在的溯源号返回 404 而不是 401
+        MvcResult detail = mvc.perform(get("/trace/detail/SY-NONE")).andExpect(status().isNotFound()).andReturn();
+        assertEquals(404, json(detail).getInt("code"));
     }
 
     // ---------- 工具方法 ----------
@@ -338,10 +344,10 @@ class AuthIntegrationTest {
         return JSONUtil.parseObj(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    private static String producerBody(String extraFields) {
-        return "{" + extraFields + "\"traceNumber\":\"SY1\",\"companyName\":\"农场A\",\"productName\":\"苹果\","
+    private String producerBody(String extraFields) {
+        return "{" + extraFields + "\"traceNumber\":\"AUTH-" + SEQ.incrementAndGet() + "\",\"companyName\":\"农场A\",\"productName\":\"苹果\","
                 + "\"productionLocation\":\"烟台\",\"variety\":\"红富士\",\"productionBatch\":\"B001\","
-                + "\"productionCert\":\"QmCid\",\"productTime\":\"2026-01-01\"}";
+                + "\"productionCert\":\"QmCid\",\"productTime\":\"2026-01-01\",\"distributorUsername\":\"" + distributorUsername + "\"}";
     }
 
     private static String createUserBody(String username, UserRole role, String chainAddress, String extraFields) {

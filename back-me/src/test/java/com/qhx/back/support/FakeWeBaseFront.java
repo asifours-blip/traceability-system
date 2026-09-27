@@ -62,6 +62,8 @@ public class FakeWeBaseFront implements AutoCloseable {
     private final AtomicLong block = new AtomicLong(1);
     private volatile Function<String, Reply> receiptHandler = hash -> receiptNotFound();
     private volatile Consumer<Request> onArrival = r -> { };
+    // 可选：按合约 v2 规则模拟三阶段写入与读回（阶段顺序、每阶段只写一次、getStageActors），默认关闭
+    private volatile ContractSim sim;
 
     public FakeWeBaseFront() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -102,6 +104,12 @@ public class FakeWeBaseFront implements AutoCloseable {
         onArrival = hook;
     }
 
+    /** 打开合约模拟（每次调用都换一份空的链上状态）：未单独指定响应的三阶段写入按 v2 规则落到内存，读函数从内存返回 */
+    public void simulateContract() {
+        sim = new ContractSim();
+    }
+
+    /** 清掉请求记录与自定义响应；合约模拟的链上状态保留 */
     public void reset() {
         requests.clear();
         receiptQueries.clear();
@@ -135,6 +143,13 @@ public class FakeWeBaseFront implements AutoCloseable {
 
     private Reply defaultReply(Request request) {
         String funcName = request.funcName;
+        ContractSim contract = sim;
+        if (contract != null) {
+            Reply simulated = contract.handle(this, request);
+            if (simulated != null) {
+                return simulated;
+            }
+        }
         if (funcName.startsWith("is")) {
             return json(200, "[true]");
         }
@@ -265,6 +280,94 @@ public class FakeWeBaseFront implements AutoCloseable {
 
     public long nextBlock() {
         return block.incrementAndGet();
+    }
+
+    /**
+     * 按合约 v2 的规则模拟 Trace 的三阶段写入：生产必须是新溯源号，分销必须在生产之后，零售必须在分销之后，每阶段只写一次。
+     * revert 文本与合约一致；读函数的返回结构与真实链一致（全部是字符串，未写入的阶段为空串和 0）。不校验角色。
+     */
+    static final class ContractSim {
+        private static final String[] WRITES = {"newAgroFood", "addTraceInfoByDistributor", "addTraceInfoByRetailer"};
+        private static final String[] READS = {"getAgroFoodInfo", "getAgroFoodInfoByDistributor", "getAgroFoodInfoByRetailer"};
+        private static final int[] WIDTH = {7, 8, 6};
+
+        private static final class Item {
+            final String[] actors = {ZERO, ZERO, ZERO};
+            final List<List<String>> data = new ArrayList<>(List.of(new ArrayList<>(), new ArrayList<>(), new ArrayList<>()));
+            final long[] timestamps = new long[3];
+            int stage;
+        }
+
+        private final Map<String, Item> items = new ConcurrentHashMap<>();
+
+        synchronized Reply handle(FakeWeBaseFront fake, Request request) {
+            String func = request.funcName;
+            List<String> params = request.params == null ? new ArrayList<>() : request.params.toList(String.class);
+            String tn = params.isEmpty() ? "" : params.get(0);
+            for (int i = 0; i < 3; i++) {
+                if (WRITES[i].equals(func)) {
+                    Item item = items.get(tn);
+                    if (i == 0 && item != null) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: traceNumber already exists");
+                    }
+                    if (i > 0 && item == null) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: traceNumber does not exist");
+                    }
+                    if (i == 1 && item.stage >= 2) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: distribution already recorded");
+                    }
+                    if (i == 2 && item.stage < 2) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: distribution not recorded yet");
+                    }
+                    if (i == 2 && item.stage >= 3) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: retail already recorded");
+                    }
+                    if (item == null) {
+                        item = new Item();
+                        items.put(tn, item);
+                    }
+                    item.actors[i] = request.user;
+                    item.data.set(i, new ArrayList<>(params.subList(1, params.size())));
+                    item.timestamps[i] = System.currentTimeMillis();
+                    item.stage = i + 1;
+                    return receiptSuccess(request.user, fake.nextHash(), fake.nextBlock());
+                }
+                if (READS[i].equals(func)) {
+                    Item item = items.get(tn);
+                    if (item == null) {
+                        return callRevert("Trace: traceNumber does not exist");
+                    }
+                    JSONArray arr = new JSONArray();
+                    if (item.timestamps[i] == 0) {
+                        for (int k = 0; k < WIDTH[i]; k++) {
+                            arr.add(isUint(i, k) ? "0" : "");
+                        }
+                        arr.add("0");
+                    } else {
+                        item.data.get(i).forEach(arr::add);
+                        arr.add(String.valueOf(item.timestamps[i]));
+                    }
+                    return json(200, arr.toString());
+                }
+            }
+            if ("getStageActors".equals(func)) {
+                Item item = items.get(tn);
+                if (item == null) {
+                    return callRevert("Trace: traceNumber does not exist");
+                }
+                return callResult((Object[]) item.actors);
+            }
+            if ("getAgroFoodList".equals(func)) {
+                JSONArray list = new JSONArray();
+                list.add(new JSONArray(items.keySet()));
+                return json(200, list.toString());
+            }
+            return null;
+        }
+
+        private static boolean isUint(int stage, int index) {
+            return (stage == 1 && (index == 5 || index == 6)) || (stage == 2 && index >= 1 && index <= 3);
+        }
     }
 
     @Override

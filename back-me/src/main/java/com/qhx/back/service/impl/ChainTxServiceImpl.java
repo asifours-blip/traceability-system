@@ -46,21 +46,27 @@ public class ChainTxServiceImpl implements ChainTxService
     @Override
     public ChainTx submit(String funcName, List<Object> params)
     {
-        return doSubmit(funcName, params, null, null);
+        return doSubmit(funcName, params, null, null, null);
     }
 
     @Override
     public ChainTx submitStage(TraceStage stage, List<Object> params)
+    {
+        return submitStage(stage, params, null);
+    }
+
+    @Override
+    public ChainTx submitStage(TraceStage stage, List<Object> params, Runnable guard)
     {
         Object first = params.isEmpty() ? null : params.get(0);
         String traceNumber = first == null ? "" : String.valueOf(first);
         if (traceNumber.length() > MAX_TRACE_NUMBER_LENGTH) {
             throw new IllegalArgumentException("溯源号长度不能超过 " + MAX_TRACE_NUMBER_LENGTH);
         }
-        return doSubmit(stage.writeFunction(), params, stage, traceNumber);
+        return doSubmit(stage.writeFunction(), params, stage, traceNumber, guard);
     }
 
-    private ChainTx doSubmit(String funcName, List<Object> params, TraceStage stage, String traceNumber)
+    private ChainTx doSubmit(String funcName, List<Object> params, TraceStage stage, String traceNumber, Runnable guard)
     {
         String signer = AddressContext.getAddress();
         if (!UserAddressUtil.isLegalAddress(signer)) {
@@ -90,6 +96,16 @@ public class ChainTxServiceImpl implements ChainTxService
             String which = existing == null ? "" : " #" + existing.getId() + "（" + existing.getState() + "）";
             throw new ChainTxException(409, "该阶段已有未确认的交易" + which
                     + "，请先调用查证接口 POST /chain-tx/{id}/verify 确认结果，查证前不能重复提交", existing);
+        }
+
+        // 1.5 业务键已占住：此时再做一次业务校验，与「变更交接对象」之间不会出现两边都通过的窗口
+        if (guard != null) {
+            try {
+                guard.run();
+            } catch (RuntimeException e) {
+                finish(tx.getId(), ChainTxState.FAILED, StrUtil.maxLength("发送前校验未通过，交易没有发出：" + e.getMessage(), MAX_REASON_LENGTH), "NOT_SENT");
+                throw e;
+            }
         }
 
         // 2. 发请求前推进到 SUBMITTED：此后进程无论在哪一步中断，这条记录都表示「可能已发出」

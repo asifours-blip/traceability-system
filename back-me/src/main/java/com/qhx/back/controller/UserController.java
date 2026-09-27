@@ -55,7 +55,7 @@ public class UserController {
         return Result.success(userAccountService.listUsers());
     }
 
-    // 管理员新建业务账号，并由管理员签名调用 addX 授予链上角色
+    // 管理员新建业务账号：链上已有角色则跳过授权交易；否则由管理员签名调用 addX，结果未知时返回 202 且账号保持停用
     @PostMapping("/admin/users")
     @ApiOperation(value = "新建账号")
     @RequireRole(UserRole.ADMIN)
@@ -70,6 +70,22 @@ public class UserController {
     public Result disableUser(@PathVariable Long id) {
         userAccountService.disableUser(id);
         return Result.success();
+    }
+
+    // 授权交易结果未知的账号：查证链上角色，已有则启用
+    @PostMapping("/admin/users/{id}/verify-role")
+    @ApiOperation(value = "查证账号链上角色")
+    @RequireRole(UserRole.ADMIN)
+    public Result verifyRole(@PathVariable Long id) {
+        return Result.success(userAccountService.verifyRole(id));
+    }
+
+    // 授权交易结果未知且链上仍无角色：重新发送授权交易
+    @PostMapping("/admin/users/{id}/grant-role")
+    @ApiOperation(value = "重试授权链上角色")
+    @RequireRole(UserRole.ADMIN)
+    public Result retryGrant(@PathVariable Long id) {
+        return Result.success(userAccountService.retryGrant(id));
     }
 
     // 查询某地址在链上是否拥有对应角色（用于核对账号表与链上状态）

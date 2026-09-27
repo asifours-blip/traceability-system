@@ -1,16 +1,20 @@
 package com.qhx.back.handler;
 
 import cn.hutool.json.JSONUtil;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.qhx.back.exception.AuthException;
+import com.qhx.back.exception.BusinessException;
 import com.qhx.back.exception.ChainTxException;
+import com.qhx.back.exception.ValidationException;
 import com.qhx.back.exception.WeBaseFrontException;
 import com.qhx.back.model.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
-import java.awt.*;
+import java.util.stream.Collectors;
 @ControllerAdvice
 @ResponseBody
 @Slf4j
@@ -42,6 +46,33 @@ public class GlobalExceptionHandler
         log.warn("chain tx not confirmed: {}", exception.getMessage());
         return ResponseEntity.status(exception.getStatus())
                 .body(new Result(exception.getData(), exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 业务规则不满足（含字段校验 400）：HTTP 状态码与 body.code 一致
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<Result> handlerBusinessException(BusinessException exception)
+    {
+        return ResponseEntity.status(exception.getStatus())
+                .body(new Result(exception.getData(), exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 请求体无法解析（如数量传了 "abc"）：400，并尽量指出字段
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Result> handlerNotReadable(HttpMessageNotReadableException exception)
+    {
+        String field = "body";
+        if (exception.getCause() instanceof JsonMappingException) {
+            JsonMappingException jme = (JsonMappingException) exception.getCause();
+            String path = jme.getPath().stream()
+                    .map(r -> r.getFieldName() != null ? r.getFieldName() : String.valueOf(r.getIndex()))
+                    .collect(Collectors.joining("."));
+            if (!path.isEmpty()) {
+                field = path;
+            }
+        }
+        return handlerBusinessException(ValidationException.of(field, "格式不正确，无法解析"));
     }
 
 

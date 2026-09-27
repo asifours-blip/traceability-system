@@ -17,12 +17,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RawHttpStub implements AutoCloseable {
 
     private final ServerSocket server;
-    private final byte[] response;
+    // 按顺序应答；超出后重复最后一个
+    private final byte[][] responses;
     private final AtomicInteger requestCount = new AtomicInteger();
     private final Thread acceptor;
 
-    public RawHttpStub(String rawResponse) throws IOException {
-        this.response = rawResponse.getBytes(StandardCharsets.UTF_8);
+    public RawHttpStub(String... rawResponses) throws IOException {
+        this.responses = new byte[rawResponses.length][];
+        for (int i = 0; i < rawResponses.length; i++) {
+            this.responses[i] = rawResponses[i].getBytes(StandardCharsets.UTF_8);
+        }
         this.server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         this.acceptor = new Thread(this::serve, "raw-http-stub");
         acceptor.setDaemon(true);
@@ -31,8 +35,19 @@ public class RawHttpStub implements AutoCloseable {
 
     /** 声明 Content-Length 为 declaredLength，但只写出 partialBody 就断开 */
     public static RawHttpStub truncatedJson(String partialBody, int declaredLength) throws IOException {
-        return new RawHttpStub("HTTP/1.1 200 OK\r\nContent-Type: application/json;charset=UTF-8\r\n"
-                + "Content-Length: " + declaredLength + "\r\n\r\n" + partialBody);
+        return new RawHttpStub(truncated(partialBody, declaredLength));
+    }
+
+    public static String truncated(String partialBody, int declaredLength) {
+        return "HTTP/1.1 200 OK\r\nContent-Type: application/json;charset=UTF-8\r\n"
+                + "Content-Length: " + declaredLength + "\r\n\r\n" + partialBody;
+    }
+
+    /** 完整的 200 JSON 响应（用于业务前置的只读调用） */
+    public static String okJson(String body) {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        return "HTTP/1.1 200 OK\r\nContent-Type: application/json;charset=UTF-8\r\n"
+                + "Content-Length: " + bytes.length + "\r\nConnection: close\r\n\r\n" + body;
     }
 
     public String baseUrl() {
@@ -47,9 +62,9 @@ public class RawHttpStub implements AutoCloseable {
         while (!server.isClosed()) {
             try (Socket socket = server.accept()) {
                 readRequest(socket.getInputStream());
-                requestCount.incrementAndGet();
+                int n = requestCount.getAndIncrement();
                 OutputStream out = socket.getOutputStream();
-                out.write(response);
+                out.write(responses[Math.min(n, responses.length - 1)]);
                 out.flush();
                 // try-with-resources 关闭 socket：响应体没写完连接就断了
             } catch (IOException e) {

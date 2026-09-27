@@ -3,9 +3,17 @@ package com.qhx.back.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import cn.hutool.json.JSONArray;
+import com.qhx.back.client.WeBaseClient;
 import com.qhx.back.enums.UserRole;
+import com.qhx.back.exception.BusinessException;
 import com.qhx.back.exception.ChainTxException;
+import com.qhx.back.exception.WeBaseFrontException;
+import com.qhx.back.mapper.AccountRoleGrantMapper;
+import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.mapper.UserAccountMapper;
+import com.qhx.back.model.AccountRoleGrant;
+import com.qhx.back.model.ChainTx;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.model.to.CreateUserTo;
 import com.qhx.back.model.vo.UserVO;
@@ -19,7 +27,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -36,6 +46,12 @@ public class UserAccountServiceImpl implements UserAccountService
     private AuthService authService;
     @Autowired
     private ChainTxService chainTxService;
+    @Autowired
+    private AccountRoleGrantMapper accountRoleGrantMapper;
+    @Autowired
+    private ChainTxMapper chainTxMapper;
+    @Autowired
+    private WeBaseClient weBaseClient;
 
     @Override
     public UserVO createUser(CreateUserTo to)
@@ -64,9 +80,117 @@ public class UserAccountServiceImpl implements UserAccountService
             throw new IllegalArgumentException("该链上地址已绑定其他账号");
         }
 
-        // 先上链授角色（onlyOwner，签名者是当前管理员），回执确认成功才建账号；失败或结果未知都抛 ChainTxException
-        chainTxService.submit(role.addFunction(), Collections.singletonList(chainAddress));
+        // 幂等：先读链上角色。已有该角色就不再发授权交易（避免 addX 因「已有角色」revert），直接建号
+        if (hasChainRole(role, chainAddress)) {
+            UserAccount account = insertAccount(to, username, role, chainAddress, true);
+            AccountRoleGrant grant = saveGrant(account.getId(), role, AccountRoleGrant.ALREADY_ON_CHAIN, null,
+                    "链上已拥有该角色，跳过授权交易");
+            return UserVO.of(account, grant);
+        }
 
+        // 由当前管理员签名授角色（onlyOwner）；回执确认成功才启用账号
+        ChainTx tx;
+        try {
+            tx = chainTxService.submit(role.addFunction(), Collections.singletonList(chainAddress));
+        } catch (ChainTxException e) {
+            if (e.getStatus() != 202) {
+                // 明确失败或未发出：不建号，管理员修正后可直接重试
+                throw e;
+            }
+            // 结果未知：建号但保持停用，状态 PENDING；查证确认链上已有角色后才启用
+            UserAccount account = insertAccount(to, username, role, chainAddress, false);
+            ChainTx pending = e.getData() instanceof ChainTx ? (ChainTx) e.getData() : null;
+            AccountRoleGrant grant = saveGrant(account.getId(), role, AccountRoleGrant.PENDING,
+                    pending == null ? null : pending.getId(), "授权交易结果未知：" + StrUtil.maxLength(e.getMessage(), 400));
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("user", UserVO.of(account, grant));
+            data.put("tx", pending);
+            throw new ChainTxException(202, "账号已创建但暂不可登录：授权交易结果未知，请在账号列表点「查证」确认链上角色后启用", data);
+        }
+        UserAccount account = insertAccount(to, username, role, chainAddress, true);
+        AccountRoleGrant grant = saveGrant(account.getId(), role, AccountRoleGrant.GRANTED_BY_TX, tx.getId(), "授权交易已确认");
+        return UserVO.of(account, grant);
+    }
+
+    @Override
+    public UserVO verifyRole(Long userId)
+    {
+        UserAccount user = requireBusinessUser(userId);
+        UserRole role = UserRole.parse(user.getRole());
+        AccountRoleGrant grant = accountRoleGrantMapper.selectById(userId);
+        if (grant == null || !AccountRoleGrant.PENDING.equals(grant.getState())) {
+            return UserVO.of(user, grant);
+        }
+        // 有交易记录先走交易查证（有哈希能补上回执）；结论以链上 isX 为准
+        if (grant.getTxId() != null) {
+            try {
+                chainTxService.verify(grant.getTxId());
+            } catch (ChainTxException e) {
+                log.warn("查证授权交易 #{} 未完成：{}", grant.getTxId(), e.getMessage());
+            }
+        }
+        if (!hasChainRole(role, user.getChainAddress())) {
+            ChainTx tx = grant.getTxId() == null ? null : chainTxMapper.selectById(grant.getTxId());
+            String txState = tx == null ? "无记录" : tx.getState();
+            throw new BusinessException(409, "链上仍没有该角色（授权交易状态：" + txState + "），账号保持停用；"
+                    + "可稍后再查证，或点「重试授权」重新发送授权交易", UserVO.of(user, grant));
+        }
+        userAccountMapper.update(null, new LambdaUpdateWrapper<UserAccount>()
+                .set(UserAccount::getEnabled, true)
+                .set(UserAccount::getUpdatedAt, new Date())
+                .eq(UserAccount::getId, userId));
+        grant = saveGrant(userId, role, AccountRoleGrant.GRANTED_BY_TX, grant.getTxId(), "查证确认链上已有角色，账号已启用");
+        return UserVO.of(userAccountMapper.selectById(userId), grant);
+    }
+
+    @Override
+    public UserVO retryGrant(Long userId)
+    {
+        UserAccount user = requireBusinessUser(userId);
+        UserRole role = UserRole.parse(user.getRole());
+        AccountRoleGrant grant = accountRoleGrantMapper.selectById(userId);
+        if (grant == null || !AccountRoleGrant.PENDING.equals(grant.getState())) {
+            throw new BusinessException(409, "只有授权状态为「待确认」的账号可以重试授权");
+        }
+        if (hasChainRole(role, user.getChainAddress())) {
+            // 之前那笔其实已经上链：直接走查证启用，不再发交易
+            return verifyRole(userId);
+        }
+        ChainTx tx;
+        try {
+            tx = chainTxService.submit(role.addFunction(), Collections.singletonList(user.getChainAddress()));
+        } catch (ChainTxException e) {
+            ChainTx pending = e.getData() instanceof ChainTx ? (ChainTx) e.getData() : null;
+            if (e.getStatus() == 202 && pending != null) {
+                saveGrant(userId, role, AccountRoleGrant.PENDING, pending.getId(), "重试授权结果仍未知：" + StrUtil.maxLength(e.getMessage(), 400));
+            }
+            throw e;
+        }
+        userAccountMapper.update(null, new LambdaUpdateWrapper<UserAccount>()
+                .set(UserAccount::getEnabled, true)
+                .set(UserAccount::getUpdatedAt, new Date())
+                .eq(UserAccount::getId, userId));
+        grant = saveGrant(userId, role, AccountRoleGrant.GRANTED_BY_TX, tx.getId(), "重试授权交易已确认，账号已启用");
+        return UserVO.of(userAccountMapper.selectById(userId), grant);
+    }
+
+    private boolean hasChainRole(UserRole role, String address)
+    {
+        JSONArray result;
+        try {
+            result = weBaseClient.call(role.checkFunction(), Collections.singletonList(address));
+        } catch (WeBaseFrontException e) {
+            throw new BusinessException(503, "读取链上角色失败，未做任何改动：" + e.mes);
+        }
+        String value = result == null || result.size() != 1 ? null : result.getStr(0);
+        if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+            throw new BusinessException(502, "无法解析链上 " + role.checkFunction() + " 的返回：" + result);
+        }
+        return "true".equalsIgnoreCase(value);
+    }
+
+    private UserAccount insertAccount(CreateUserTo to, String username, UserRole role, String chainAddress, boolean enabled)
+    {
         Date now = new Date();
         UserAccount account = new UserAccount();
         account.setUsername(username);
@@ -74,18 +198,51 @@ public class UserAccountServiceImpl implements UserAccountService
         account.setRole(role.name());
         account.setChainAddress(chainAddress);
         account.setCompanyName(StrUtil.trim(to.getCompanyName()));
-        account.setEnabled(true);
+        account.setEnabled(enabled);
         account.setCreatedAt(now);
         account.setUpdatedAt(now);
         userAccountMapper.insert(account);
-        return UserVO.of(account);
+        return account;
+    }
+
+    private AccountRoleGrant saveGrant(Long userId, UserRole role, String state, Long txId, String note)
+    {
+        AccountRoleGrant existing = accountRoleGrantMapper.selectById(userId);
+        AccountRoleGrant grant = existing == null ? new AccountRoleGrant() : existing;
+        grant.setUserId(userId);
+        grant.setRole(role.name());
+        grant.setState(state);
+        grant.setTxId(txId);
+        grant.setNote(StrUtil.maxLength(note, 490));
+        grant.setUpdatedAt(new Date());
+        if (existing == null) {
+            grant.setCreatedAt(new Date());
+            accountRoleGrantMapper.insert(grant);
+        } else {
+            accountRoleGrantMapper.updateById(grant);
+        }
+        return grant;
+    }
+
+    private UserAccount requireBusinessUser(Long userId)
+    {
+        UserAccount user = userAccountMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(404, "用户不存在");
+        }
+        if (!UserRole.parse(user.getRole()).isBusinessRole()) {
+            throw new BusinessException(400, "管理员没有链上业务角色");
+        }
+        return user;
     }
 
     @Override
     public List<UserVO> listUsers()
     {
+        Map<Long, AccountRoleGrant> grants = accountRoleGrantMapper.selectList(null).stream()
+                .collect(Collectors.toMap(AccountRoleGrant::getUserId, g -> g));
         return userAccountMapper.selectList(new LambdaQueryWrapper<UserAccount>().orderByAsc(UserAccount::getId))
-                .stream().map(UserVO::of).collect(Collectors.toList());
+                .stream().map(u -> UserVO.of(u, grants.get(u.getId()))).collect(Collectors.toList());
     }
 
     @Override

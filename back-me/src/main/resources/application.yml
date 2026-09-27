@@ -3,8 +3,8 @@ server:
   port: 8010
 
 allow:
-  # 免登录路径（Ant 风格，精确匹配）：消费者扫码详情与系统信息；其余接口都要 Bearer token
-  paths: /login,/getSystemInfo,/trace/detail/**
+  # 免登录路径（Ant 风格，精确匹配）：消费者扫码详情（仅公开字段）、已绑定到溯源号的公开文件、系统信息；其余接口都要 Bearer token
+  paths: /login,/getSystemInfo,/trace/detail/*,/trace/*/file/*
 
 # 账号体系：登录 token 有效期；首次启动若没有 ADMIN，则按下列配置创建管理员
 # 初始密码只从环境变量 ADMIN_INITIAL_PASSWORD 读取，仓库不内置默认密码，缺失则跳过并打 ERROR 日志

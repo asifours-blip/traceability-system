@@ -5,8 +5,10 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qhx.back.enums.UserRole;
 import com.qhx.back.mapper.ChainTxMapper;
+import com.qhx.back.mapper.TraceBatchMapper;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.model.ChainTx;
+import com.qhx.back.model.TraceBatch;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.service.AuthService;
 import com.qhx.back.support.FakeWeBaseFront;
@@ -64,7 +66,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql",
+        "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
         "auth.bootstrap-admin.username=admin",
         "auth.bootstrap-admin.password=" + ChainTxLifecycleIntegrationTest.ADMIN_PASSWORD,
         "auth.bootstrap-admin.address=" + ChainTxLifecycleIntegrationTest.ADMIN_ADDRESS,
@@ -114,9 +116,45 @@ class ChainTxLifecycleIntegrationTest {
         }
     }
 
+    // 业务规则（归属与交接）不是本测试的关注点：每个用例准备好交接对象，分销/零售用例预先建好批次
+    private UserAccount producer0;
+    private UserAccount distributor0;
+    private UserAccount retailer0;
+
+    @Autowired
+    private TraceBatchMapper traceBatchMapper;
+
     @BeforeEach
     void resetFake() {
         fake.reset();
+        producer0 = seedUser(UserRole.PRODUCER);
+        distributor0 = seedUser(UserRole.DISTRIBUTOR);
+        retailer0 = seedUser(UserRole.RETAILER);
+    }
+
+    /** 批次已由 producer0 建档并已上链生产信息，指定分销商为 distributor；链上 getStageActors 先按「仅生产已写入」应答 */
+    private void batchForDistribution(String tn, UserAccount distributor) {
+        insertBatch(tn, distributor.getId(), null);
+        fake.on("getStageActors", r -> callResult(producer0.getChainAddress(), ZERO, ZERO));
+    }
+
+    /** 批次已完成分销（数量 100），指定零售商为 retailer；链上读回按已分销应答 */
+    private void batchForRetail(String tn, UserAccount retailer) {
+        insertBatch(tn, distributor0.getId(), retailer.getId());
+        fake.on("getAgroFoodInfo", r -> callResult(producerChainData(1790529909955L)));
+        fake.on("getAgroFoodInfoByDistributor", r -> callResult(distributorChainData(10, 1790529911979L)));
+    }
+
+    private void insertBatch(String tn, Long distributorId, Long retailerId) {
+        TraceBatch batch = new TraceBatch();
+        batch.setTraceNumber(tn);
+        batch.setProductName("苹果");
+        batch.setProducerId(producer0.getId());
+        batch.setDistributorId(distributorId);
+        batch.setRetailerId(retailerId);
+        batch.setCreatedAt(new Date());
+        batch.setUpdatedAt(new Date());
+        traceBatchMapper.insert(batch);
     }
 
     // ---------- 发交易：各种结果 ----------
@@ -172,6 +210,7 @@ class ChainTxLifecycleIntegrationTest {
     void revert_重复分销映射409_记录FAILED含revert原因() throws Exception {
         UserAccount distributor = seedUser(UserRole.DISTRIBUTOR);
         String tn = traceNumber();
+        batchForDistribution(tn, distributor);
         fake.on("addTraceInfoByDistributor",
                 r -> receiptRevert(r.user, fake.nextHash(), fake.nextBlock(), "Trace: distribution already recorded"));
 
@@ -208,10 +247,13 @@ class ChainTxLifecycleIntegrationTest {
         String tn = traceNumber();
         // JDK HttpServer 无法在响应中途断开，这一笔临时改走原始 socket 替身
         String original = httpUtil.URL;
-        try (RawHttpStub stub = RawHttpStub.truncatedJson("{\"transactionHash\":\"0x", 800)) {
+        // 第 1 个请求是生产前置的只读检查（溯源号在链上不存在），第 2 个才是交易
+        try (RawHttpStub stub = new RawHttpStub(
+                RawHttpStub.okJson("[\"Call contract return error: Trace: traceNumber does not exist\"]"),
+                RawHttpStub.truncated("{\"transactionHash\":\"0x", 800))) {
             httpUtil.URL = stub.baseUrl();
             perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(producerBody(tn)), token, 202);
-            assertEquals(1, stub.requestCount());
+            assertEquals(2, stub.requestCount());
         } finally {
             httpUtil.URL = original;
         }
@@ -276,7 +318,8 @@ class ChainTxLifecycleIntegrationTest {
                 .content(producerBody(tn)), token, 409);
         assertTrue(body.getStr("mes").contains("查证"), body.getStr("mes"));
         assertEquals(firstId, body.getJSONObject("data").getLong("id"));
-        assertTrue(fake.requests().isEmpty());
+        // 只有生产前置的只读检查，没有再发交易
+        assertTrue(fake.requestsFor("newAgroFood").isEmpty());
         assertEquals(1, rows(tn).size());
     }
 
@@ -294,6 +337,7 @@ class ChainTxLifecycleIntegrationTest {
                 .content(producerBody(tn)), token, 202).getJSONObject("data").getLong("id");
         assertEquals(hash, chainTxMapper.selectById(id).getTxHash());
 
+        fake.reset();
         fake.onReceipt(h -> receiptSuccess(producer.getChainAddress(), h, 42));
         JSONObject data = perform(post("/chain-tx/" + id + "/verify"), token, 200).getJSONObject("data");
         assertEquals("RECEIPT_CONFIRMED", data.getStr("conclusion"));
@@ -377,6 +421,7 @@ class ChainTxLifecycleIntegrationTest {
         UserAccount retailer = seedUser(UserRole.RETAILER);
         String token = login(retailer);
         String tn = traceNumber();
+        batchForRetail(tn, retailer);
         fake.on("addTraceInfoByRetailer", r -> receiptTimeout());
         Long oldId = perform(post("/retailer/add").contentType(MediaType.APPLICATION_JSON)
                 .content(retailerBody(tn)), token, 202).getJSONObject("data").getLong("id");
@@ -430,6 +475,7 @@ class ChainTxLifecycleIntegrationTest {
         Long id = perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
                 .content(producerBody(tn)), login(producer), 202).getJSONObject("data").getLong("id");
 
+        fake.reset();
         String strangerToken = login(stranger);
         perform(get("/chain-tx/" + id), strangerToken, 403);
         perform(post("/chain-tx/" + id + "/verify"), strangerToken, 403);
@@ -442,6 +488,8 @@ class ChainTxLifecycleIntegrationTest {
     // ---------- 工具方法 ----------
 
     private Long unknownDistribution(String tn, String token, long price) throws Exception {
+        UserAccount distributor = authService.authenticate(token);
+        batchForDistribution(tn, distributor);
         fake.on("addTraceInfoByDistributor", r -> receiptTimeout());
         Long id = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
                 .content(distributorBody(tn, price)), token, 202).getJSONObject("data").getLong("id");
@@ -480,16 +528,18 @@ class ChainTxLifecycleIntegrationTest {
         return new Object[]{"门店", 20, 5, 7, "INV-1", "2026-02-01", timestamp};
     }
 
-    private static String producerBody(String tn) {
+    private String producerBody(String tn) {
         return "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"农场A\",\"productName\":\"苹果\","
                 + "\"productionLocation\":\"烟台\",\"variety\":\"红富士\",\"productionBatch\":\"B001\","
-                + "\"productionCert\":\"QmCid\",\"productTime\":\"2026-01-01\"}";
+                + "\"productionCert\":\"QmCid\",\"productTime\":\"2026-01-01\","
+                + "\"distributorUsername\":\"" + distributor0.getUsername() + "\"}";
     }
 
-    private static String distributorBody(String tn, long price) {
+    private String distributorBody(String tn, long price) {
         return "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"仓配\",\"storageCondition\":\"冷藏\","
                 + "\"transportMethod\":\"货车\",\"distributeBatch\":\"D01\",\"storageLocation\":\"济南\","
-                + "\"distributePrice\":" + price + ",\"distributeQuantity\":100,\"inspectionReport\":\"QmR\"}";
+                + "\"distributePrice\":" + price + ",\"distributeQuantity\":100,\"inspectionReport\":\"QmR\","
+                + "\"retailerUsername\":\"" + retailer0.getUsername() + "\"}";
     }
 
     private static String retailerBody(String tn) {

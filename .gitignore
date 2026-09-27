@@ -29,6 +29,13 @@ yarn-error.log*
 
 # Blockchain
 back-me/src/main/resources/accounts/
+# 本地隔离链（scripts/local-chain/）的节点数据、证书、私钥只放在 $E2E_HOME（默认 WSL ~/trace-e2e），这里防止误拷入库
+nodes/
+*.key
+*.pem
+*.p12
+*.jks
+*.crt
 
 # 本地敏感配置（数据库密码/合约地址等，勿提交）
 back-me/src/main/resources/application-local.yml

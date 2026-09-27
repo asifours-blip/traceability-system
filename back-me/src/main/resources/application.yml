@@ -44,6 +44,11 @@ contract:
 
 webase-front:
   url: ${WEBASE_FRONT_URL:http://localhost:5002/WeBASE-Front}
+  group-id: ${WEBASE_GROUP_ID:1}
+  # 连不上即判定交易未发出
+  connect-timeout-ms: ${WEBASE_CONNECT_TIMEOUT_MS:3000}
+  # 必须大于 WeBASE-Front 的 constant.transMaxWait（默认 30 秒）；超时后交易记为 UNKNOWN，不自动重发
+  read-timeout-ms: ${WEBASE_READ_TIMEOUT_MS:40000}
 
 ipfs:
   host: '127.0.0.1'

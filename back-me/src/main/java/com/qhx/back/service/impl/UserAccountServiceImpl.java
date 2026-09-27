@@ -3,14 +3,14 @@ package com.qhx.back.service.impl;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.qhx.back.client.WeBaseClient;
 import com.qhx.back.enums.UserRole;
-import com.qhx.back.exception.WeBaseFrontException;
+import com.qhx.back.exception.ChainTxException;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.model.to.CreateUserTo;
 import com.qhx.back.model.vo.UserVO;
 import com.qhx.back.service.AuthService;
+import com.qhx.back.service.ChainTxService;
 import com.qhx.back.service.UserAccountService;
 import com.qhx.back.util.UserAddressUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +35,7 @@ public class UserAccountServiceImpl implements UserAccountService
     @Autowired
     private AuthService authService;
     @Autowired
-    private WeBaseClient weBaseClient;
+    private ChainTxService chainTxService;
 
     @Override
     public UserVO createUser(CreateUserTo to)
@@ -64,8 +64,8 @@ public class UserAccountServiceImpl implements UserAccountService
             throw new IllegalArgumentException("该链上地址已绑定其他账号");
         }
 
-        // 先上链授角色（onlyOwner，签名者是当前管理员），失败则不建账号
-        weBaseClient.sendTransaction(role.addFunction(), Collections.singletonList(chainAddress));
+        // 先上链授角色（onlyOwner，签名者是当前管理员），回执确认成功才建账号；失败或结果未知都抛 ChainTxException
+        chainTxService.submit(role.addFunction(), Collections.singletonList(chainAddress));
 
         Date now = new Date();
         UserAccount account = new UserAccount();
@@ -108,11 +108,11 @@ public class UserAccountServiceImpl implements UserAccountService
         authService.revokeAllSessions(userId);
 
         try {
-            weBaseClient.sendTransaction(role.removeFunction(), Collections.singletonList(user.getChainAddress()));
-        } catch (WeBaseFrontException e) {
-            // 账号已停用，链上撤销可对同一用户重试本接口
-            log.error("用户 {} 已停用，但链上 {} 失败", user.getUsername(), role.removeFunction(), e);
-            throw new WeBaseFrontException("账号已停用并已撤销登录，但链上撤销角色失败，请重试：" + e.mes);
+            chainTxService.submit(role.removeFunction(), Collections.singletonList(user.getChainAddress()));
+        } catch (ChainTxException e) {
+            // 账号已停用，链上撤销可对同一用户重试本接口；结果未知时先查证，避免重复撤销被合约拒绝
+            log.error("用户 {} 已停用，但链上 {} 未确认成功", user.getUsername(), role.removeFunction(), e);
+            throw new ChainTxException(e.getStatus(), "账号已停用并已撤销登录，但链上撤销角色未确认成功：" + e.getMessage(), e.getData());
         }
     }
 }

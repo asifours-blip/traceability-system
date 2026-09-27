@@ -2,13 +2,15 @@ package com.qhx.back.controller;
 
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import com.qhx.back.chain.TraceStage;
 import com.qhx.back.client.WeBaseClient;
 import com.qhx.back.context.AddressContext;
 import com.qhx.back.model.Result;
-import com.qhx.back.exception.WeBaseFrontException;
+import com.qhx.back.exception.ChainTxException;
 import com.qhx.back.model.to.DistributorTo;
 import com.qhx.back.model.to.ProducerTo;
 import com.qhx.back.model.to.RetailerTo;
+import com.qhx.back.service.ChainTxService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,8 @@ class TraceControllerTest {
 
     @Mock
     private WeBaseClient weBaseClient;
+    @Mock
+    private ChainTxService chainTxService;
 
     private TraceController controller;
 
@@ -38,6 +42,7 @@ class TraceControllerTest {
     void setUp() {
         controller = new TraceController();
         ReflectionTestUtils.setField(controller, "weBaseClient", weBaseClient);
+        ReflectionTestUtils.setField(controller, "chainTxService", chainTxService);
         AddressContext.clear();
     }
 
@@ -111,8 +116,8 @@ class TraceControllerTest {
         to.setProductionCert("QmCid");
         to.setProductTime("2026-01-01");
         controller.addProducer(to);
-        verify(weBaseClient).sendTransaction(
-                eq("newAgroFood"),
+        verify(chainTxService).submitStage(
+                eq(TraceStage.PRODUCTION),
                 eq(Arrays.asList("SY1", "农场A", "苹果", "烟台", "红富士", "B001", "QmCid", "2026-01-01"))
         );
     }
@@ -130,8 +135,8 @@ class TraceControllerTest {
         to.setDistributeQuantity(100L);
         to.setInspectionReport("QmR");
         controller.addDistributor(to);
-        verify(weBaseClient).sendTransaction(
-                eq("addTraceInfoByDistributor"),
+        verify(chainTxService).submitStage(
+                eq(TraceStage.DISTRIBUTION),
                 eq(Arrays.asList("SY1", "仓配", "冷藏", "货车", "D01", "济南", 10L, 100L, "QmR"))
         );
     }
@@ -147,14 +152,14 @@ class TraceControllerTest {
         to.setInvoiceNo("INV-1");
         to.setSaleTime("2026-02-01");
         controller.addRetailer(to);
-        verify(weBaseClient).sendTransaction(
-                eq("addTraceInfoByRetailer"),
+        verify(chainTxService).submitStage(
+                eq(TraceStage.RETAIL),
                 eq(Arrays.asList("SY1", "门店", 20L, 5L, 7L, "INV-1", "2026-02-01"))
         );
     }
 
     @Test
-    void 角色不足时WeBASE异常向上抛() {
+    void 链上拒绝时ChainTxException向上抛() {
         ProducerTo to = new ProducerTo();
         to.setTraceNumber("SY1");
         to.setCompanyName("农场A");
@@ -164,12 +169,12 @@ class TraceControllerTest {
         to.setProductionBatch("B001");
         to.setProductionCert("QmCid");
         to.setProductTime("2026-01-01");
-        org.mockito.Mockito.doThrow(new WeBaseFrontException("caller does not have the Producer role"))
-                .when(weBaseClient)
-                .sendTransaction(org.mockito.ArgumentMatchers.eq("newAgroFood"),
+        org.mockito.Mockito.doThrow(new ChainTxException(403, "当前账户没有对应的链上角色", null))
+                .when(chainTxService)
+                .submitStage(org.mockito.ArgumentMatchers.eq(TraceStage.PRODUCTION),
                         org.mockito.ArgumentMatchers.anyList());
-        WeBaseFrontException ex = assertThrows(WeBaseFrontException.class, () -> controller.addProducer(to));
-        assertEquals("caller does not have the Producer role", ex.getMessage());
+        ChainTxException ex = assertThrows(ChainTxException.class, () -> controller.addProducer(to));
+        assertEquals(403, ex.getStatus());
     }
 
     private void stubProducer(String traceNumber) {

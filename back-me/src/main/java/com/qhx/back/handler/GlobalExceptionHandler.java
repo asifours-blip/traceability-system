@@ -2,6 +2,7 @@ package com.qhx.back.handler;
 
 import cn.hutool.json.JSONUtil;
 import com.qhx.back.exception.AuthException;
+import com.qhx.back.exception.ChainTxException;
 import com.qhx.back.exception.WeBaseFrontException;
 import com.qhx.back.model.Result;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,16 @@ public class GlobalExceptionHandler
     {
         return ResponseEntity.status(exception.getStatus())
                 .body(new Result(null, exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 交易未确认成功：HTTP 状态码与 body.code 一致，data 是 chain_tx 记录（前端据此调用查证接口）
+    @ExceptionHandler(ChainTxException.class)
+    public ResponseEntity<Result> handlerChainTxException(ChainTxException exception)
+    {
+        log.warn("chain tx not confirmed: {}", exception.getMessage());
+        return ResponseEntity.status(exception.getStatus())
+                .body(new Result(exception.getData(), exception.getMessage(), exception.getStatus()));
     }
 
 

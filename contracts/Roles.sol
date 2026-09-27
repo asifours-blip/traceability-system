@@ -9,15 +9,14 @@ library Roles {
         mapping(address => bool) bearer;
     }
 
-    // 传入的是一个结构体,且有一个映射，那证明
-
     function add(Role storage role, address account) internal {
-        require(!has(role, account), "account already has a role!");
+        require(account != address(0), "Roles: account is the zero address");
+        require(!has(role, account), "Roles: account already has role");
         role.bearer[account] = true;
     }
 
     function remove(Role storage role, address account) internal {
-        require(has(role, account), "account already has not a role!");
+        require(has(role, account), "Roles: account does not have role");
         role.bearer[account] = false;
     }
 

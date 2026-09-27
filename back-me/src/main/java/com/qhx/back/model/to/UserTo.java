@@ -4,5 +4,5 @@ import lombok.Data;
 @Data
 public class UserTo {
     private String address;
-    private String type; // 用户类型
+    private String role; // UserRole 枚举名，只用于查询链上角色
 }

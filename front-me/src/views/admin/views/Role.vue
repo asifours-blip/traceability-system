@@ -1,126 +1,166 @@
 <template>
 <div class="role-box">
   <div class="role-flex">
-    <!-- 左侧表单卡片 -->
+    <!-- 左侧：新建账号 -->
     <div class="role-card">
       <div class="role-header">
-        <h1 class="title">用户角色管理</h1>
-        <p class="subtitle">查询、添加或撤销用户角色</p>
+        <h1 class="title">新建账号</h1>
+        <p class="subtitle">由管理员签名在链上授予角色</p>
       </div>
       <el-form :model="userForm" :rules="rules" ref="userForm" class="role-form">
-        <el-form-item prop="type" class="form-item">
-          <el-select v-model="userForm.type" placeholder="选择用户类型" class="type-select">
+        <el-form-item prop="username" class="form-item">
+          <el-input v-model="userForm.username" placeholder="用户名（字母、数字、下划线）" class="custom-input" />
+        </el-form-item>
+        <el-form-item prop="password" class="form-item">
+          <el-input v-model="userForm.password" type="password" show-password placeholder="初始密码（至少 8 位）" class="custom-input" />
+        </el-form-item>
+        <el-form-item prop="role" class="form-item">
+          <el-select v-model="userForm.role" placeholder="选择角色" class="type-select">
             <el-option v-for="item in options" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item prop="address" class="form-item">
-          <el-input v-model="userForm.address" placeholder="输入用户地址" class="custom-input" />
+        <el-form-item prop="chainAddress" class="form-item">
+          <el-input v-model="userForm.chainAddress" placeholder="链上地址（须已在 WeBASE-Front 托管私钥）" class="custom-input" />
+        </el-form-item>
+        <el-form-item prop="companyName" class="form-item">
+          <el-input v-model="userForm.companyName" placeholder="公司/组织名" class="custom-input" />
         </el-form-item>
         <div class="button-group">
-          <el-button type="primary" @click="submitQuery('userForm')" class="submit-btn">查询</el-button>
+          <el-button type="primary" @click="submitCreate('userForm')" class="submit-btn">创建</el-button>
         </div>
       </el-form>
     </div>
-    <!-- 右侧结果卡片 -->
-    <div v-if="isQueried" class="result-card">
+    <!-- 右侧：账号列表 -->
+    <div class="result-card list-card">
       <div class="result-header">
-        <h2 class="result-title">查询结果</h2>
+        <h2 class="result-title">账号列表</h2>
       </div>
-      <div class="result-content">
-        <p><strong>用户类型：</strong>{{ getTypeLabel(userForm.type) }}</p>
-        <p><strong>用户地址：</strong>{{ userForm.address }}</p>
-        <p><strong>角色状态：</strong>
-          <span v-if="isExistRole" style="color: #52c41a;">已拥有该角色</span>
-          <span v-else style="color: #faad14;">未拥有该角色</span>
-        </p>
-      </div>
-      <div class="button-group">
-        <el-button v-if="!isExistRole" type="success" @click="addUser" class="action-btn">添加</el-button>
-        <el-button v-if="isExistRole" type="danger" @click="deleteUser" class="action-btn">撤销</el-button>
-      </div>
+      <el-table :data="users" size="small" class="user-table">
+        <el-table-column prop="username" label="用户名" min-width="100" />
+        <el-table-column label="角色" min-width="70">
+          <template slot-scope="scope">{{ getRoleLabel(scope.row.role) }}</template>
+        </el-table-column>
+        <el-table-column prop="companyName" label="公司/组织" min-width="100" />
+        <el-table-column label="链上地址" min-width="120">
+          <template slot-scope="scope">
+            <el-tooltip :content="scope.row.chainAddress" placement="top">
+              <span>{{ shortAddress(scope.row.chainAddress) }}</span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" min-width="60">
+          <template slot-scope="scope">
+            <span v-if="scope.row.enabled" style="color: #52c41a;">启用</span>
+            <span v-else style="color: #faad14;">停用</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="140">
+          <template slot-scope="scope">
+            <template v-if="scope.row.role !== 'ADMIN'">
+              <el-button type="text" @click="checkChainRole(scope.row)">核对链上角色</el-button>
+              <!-- 停用失败时（链上撤销未成功）可对已停用账号重试 -->
+              <el-button type="text" class="danger-text" @click="disable(scope.row)">
+                {{ scope.row.enabled ? '停用' : '重试撤销' }}
+              </el-button>
+            </template>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
   </div>
 </div>
 </template>
 <script>
+import { listUsers, createUser, disableUser, getChainRole } from '@/apis/user'
+
 export default {
   name: "Role",
   data() {
     return {
       userForm: {
-        type: '',
-        address: ''
+        username: '',
+        password: '',
+        role: '',
+        chainAddress: '',
+        companyName: ''
       },
       rules: {
-        address: [
-          { required: true, message: '请输入用户地址', trigger: 'blur' },
+        username: [
+          { required: true, message: '请输入用户名', trigger: 'blur' },
         ],
-        type: [
-          { required: true, message: '请选择用户类型', trigger: 'blur' },
+        password: [
+          { required: true, message: '请输入初始密码', trigger: 'blur' },
+          { min: 8, message: '密码至少 8 位', trigger: 'blur' },
+        ],
+        role: [
+          { required: true, message: '请选择角色', trigger: 'blur' },
+        ],
+        chainAddress: [
+          { required: true, message: '请输入链上地址', trigger: 'blur' },
         ],
       },
       options: [
-        { value: '0', label: '生产商' },
-        { value: '1', label: '分销商' },
-        { value: '2', label: '零售商' },
+        { value: 'PRODUCER', label: '生产商' },
+        { value: 'DISTRIBUTOR', label: '分销商' },
+        { value: 'RETAILER', label: '零售商' },
       ],
-      isExistRole: false,
-      isQueried: false
+      users: []
     }
   },
+  created() {
+    this.fetchUsers();
+  },
   methods: {
-    submitQuery(formName) {
-      this.$refs[formName].validate(valid => {
-        if (valid) {
-          this.getUserRole();
+    async fetchUsers() {
+      const res = await listUsers()
+      if (res.code == 200) {
+        this.users = res.data
+      }
+    },
+    submitCreate(formName) {
+      this.$refs[formName].validate(async valid => {
+        if (!valid) {
+          return;
+        }
+        const res = await createUser(this.userForm)
+        if (res.code == 200) {
+          this.$message.success("账号已创建，链上角色已授予")
+          this.$refs[formName].resetFields()
+          this.fetchUsers()
+        } else {
+          this.$message.error(res.mes)
         }
       });
     },
-    deleteUser() {
-      this.$confirm('此操作将用户撤销该角色?', '提示', {
+    disable(row) {
+      this.$confirm(`停用 ${row.username}：撤销其全部登录并由管理员签名撤销链上角色，是否继续？`, '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(async () => {
-        const res = await this.$http.post("/delete/user", this.userForm)
+        const res = await disableUser(row.id)
         if (res.code == 200) {
-          this.$message.success("用户撤销角色成功")
-          this.isExistRole = false;
+          this.$message.success("账号已停用，链上角色已撤销")
         } else {
           this.$message.error(res.mes)
         }
+        this.fetchUsers()
       }).catch(() => { })
     },
-    addUser() {
-      this.$confirm('此操作将用户添加该角色?', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(async () => {
-        const res = await this.$http.post("/add/user", this.userForm)
-        if (res.code == 200) {
-          this.$message.success("用户添加角色成功")
-          this.isExistRole = true;
-        } else {
-          this.$message.error(res.mes)
-        }
-      }).catch(() => { })
+    async checkChainRole(row) {
+      const res = await getChainRole({ address: row.chainAddress, role: row.role })
+      if (res.code == 200) {
+        this.$message.info(res.data ? '链上已拥有该角色' : '链上未拥有该角色')
+      } else {
+        this.$message.error(res.mes)
+      }
     },
-    getUserRole() {
-      this.$http.get("/get/user/role", {
-        params: this.userForm
-      }).then(res => {
-        this.isQueried = true;
-        if (res.code == 200) {
-          this.isExistRole = res.data
-        } else {
-          this.$message.error(res.mes)
-        }
-      })
+    getRoleLabel(role) {
+      const found = this.options.find(item => item.value === role)
+      return found ? found.label : (role === 'ADMIN' ? '管理员' : role)
     },
-    getTypeLabel(type) {
-      const found = this.options.find(item => item.value === type)
-      return found ? found.label : ''
+    shortAddress(address) {
+      return address ? address.substring(0, 8) + '...' + address.substring(address.length - 6) : ''
     }
   }
 }
@@ -233,6 +273,15 @@ export default {
   font-size: 16px;
   font-weight: 500;
   transition: all 0.3s ease;
+}
+
+.list-card {
+  width: 720px;
+  justify-content: flex-start;
+}
+
+.danger-text {
+  color: #ff3b30;
 }
 
 .result-title {

@@ -7,11 +7,11 @@
 ## 功能特性（以代码为准）
 
 - **三角色流转**：生产者 `newAgroFood` → 分销商 `addTraceInfoByDistributor` → 零售商 `addTraceInfoByRetailer` → 消费者查询详情
-- **联盟链存证**：关键字段写入 `Trace` 合约；角色由合约 `onlyProducer` / `onlyDistributor` / `onlyRetailer` 校验。后端 `/add/user` 额外要求请求头地址等于 `contract.owner`
+- **联盟链存证**：关键字段写入 `Trace` 合约；角色由合约 `onlyProducer` / `onlyDistributor` / `onlyRetailer` 校验。后端另按账号角色鉴权（见「鉴权方式」）
 - **IPFS**：证书、检测报告先上传，链上存 CID（`IPFSServiceImpl` 返回 Base58 hash）
 - **IoT 看板**：`IotDataSimulatorTask` **每 5 分钟随机写入** 温湿度/光照到 MySQL，**不是真实传感器**
 - **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单）
-- **地址头鉴权**：请求头 `address`（`AddressInterceptor` + 前端 `src/utils/request.js`）。**不是 JWT**，仓库里没有 token 签发
+- **账号 + Bearer token**：用户名/密码（BCrypt）登录，服务端签发 256 位随机 token（库里只存 sha256）；交易签名地址取自服务端账号绑定的地址，客户端 `address` 头一律忽略
 - **离线测试门禁**：Mock `WeBaseClient`，Maven 单测不连链；前端 ESLint
 
 ## 技术栈
@@ -45,7 +45,7 @@
 │   前端 front-me (Vue 2.6)        │
 │  生产者/分销商/零售商/消费者/IoT  │
 └───────────────┬──────────────────┘
-                │ HTTP + 请求头 address
+                │ HTTP + Bearer token
 ┌───────────────▼──────────────────┐
 │  后端 back-me (Spring Boot 8010) │
 │  Controller 直调 WeBASE HttpUtil │
@@ -68,7 +68,7 @@ code1.1.3/
 ├── back-me/                       # Spring Boot
 │   └── src/main/java/com/qhx/back/
 │       ├── controller/            # Trace / User / Owner / IPFS / IoT / Block …
-│       ├── interceptor/           # AddressInterceptor（地址头，不是 JWT）
+│       ├── interceptor/           # AddressInterceptor（token → 账号 → 绑定地址 + 角色）
 │       ├── task/IotDataSimulatorTask.java
 │       └── resources/
 │           ├── application.yml            # 模板 + 内嵌 ABI
@@ -86,7 +86,7 @@ code1.1.3/
 
 - JDK 8+（`pom.xml` 编译目标 **14**）、Maven 3.6+
 - Node.js 16+、npm
-- MySQL 5.7+（仅 IoT 表；无库时后端仍能起，定时任务会写失败）
+- MySQL 5.7+（IoT 表 + 账号/会话表；无库时后端仍能起，但无法登录，定时任务会写失败）
 - FISCO BCOS + WeBASE-Front（链上读写）
 - IPFS kubo（默认 `127.0.0.1:5001`）
 
@@ -100,6 +100,20 @@ cp application-local.yml.example application-local.yml
 ```
 
 `application-local.yml` 已在 `.gitignore`，**永远不要 commit**。不要把数据库密码、合约私钥、WeBASE 密钥写进仓库。
+
+### 账号初始化
+
+```bash
+# 1. 建账号表与会话表（库名与 MYSQL_DB 一致，默认 mysql；可重复执行）
+mysql -u root -p mysql < back-me/src/main/resources/db/auth-schema.sql
+
+# 2. 首次启动时注入管理员（库里已有 ADMIN 时不会覆盖）
+export ADMIN_INITIAL_PASSWORD='<至少 8 位，自行生成>'
+export ADMIN_USERNAME=admin                 # 可选，默认 admin
+export ADMIN_ADDRESS=0x...                  # 可选，默认 contract.owner
+```
+
+仓库不内置默认密码：缺少 `ADMIN_INITIAL_PASSWORD` 时后端照常启动，但跳过管理员创建并打 ERROR 日志。之后由管理员在「用户管理」页新建生产商/分销商/零售商账号；没有公开注册入口。
 
 ### 后端 / 前端
 
@@ -135,15 +149,19 @@ npm run lint
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
 - **没有** `getAgroFoodListDetail`：`GET /trace/list` 对每个编号再打 3 次链查询（N+1），这是已知限制，不是「只查 3 条」的优化
 
-## 鉴权方式（address 请求头，非 JWT）
+## 鉴权方式（服务端账号 + Bearer token）
 
 | 事实 | 位置 |
 |------|------|
-| 写接口读请求头 `address` | `AddressInterceptor` |
-| 空/非法地址拒绝，HTTP `401`，body `code=401` | 同上 |
-| 白名单：`/login,/register,/getContractOwner,/getSystemInfo,/trace/detail` | `application.yml` → `allow.paths` |
-| 前端把 `userInfo.address` 塞进 header | `front-me/src/utils/request.js` |
-| 登录只调合约 `isProducer` 等，**不签发 token** | `UserController.login` |
+| `POST /login` 用户名 + 密码（BCrypt），返回随机 token；`POST /logout` 撤销当前 token | `UserController` / `AuthServiceImpl` |
+| 表 `user_account`（角色、绑定链上地址、启用状态）与 `user_session`（token 的 sha256、过期时间、是否撤销） | `db/auth-schema.sql` |
+| 拦截器按 `Authorization: Bearer` 查会话，把**账号绑定的地址**写入 `AddressContext`；客户端 `address` 头忽略 | `AddressInterceptor` |
+| `WeBaseClient.sendTransaction` 不接受签名地址参数，只用 `AddressContext` | `HttpUtil` |
+| 无 token / 过期 / 已撤销 / 账号停用 → HTTP 401；角色不符 → HTTP 403 | `AddressInterceptor` + `@RequireRole` |
+| 生产/分销/零售写接口只允许对应角色；用户管理、系统信息写入只允许 ADMIN；合约 `onlyProducer` 等保留为第二道防线 | `TraceController` / `UserController` / `SystemInfoController` |
+| 免登录：`/login,/getSystemInfo,/trace/detail/**`（Ant 精确匹配） | `application.yml` → `allow.paths` |
+| 管理员新建账号时由**管理员地址**签名调用 `addX(address)`；停用账号时撤销其全部 token，并由管理员签名调用 `removeX(address)` | `UserAccountServiceImpl` |
+| 新用户的链上地址须是**已在 WeBASE-Front 托管私钥**的地址，由管理员填写（仓库未对接 WeBASE 私钥管理接口） | 用户管理页 |
 
 ## IoT 数据（定时模拟任务，非真实传感器）
 
@@ -164,9 +182,9 @@ npm run lint
 ## 已知限制
 
 1. `/trace/list` N+1 链查询（合约没有批量详情接口）
-2. 空/非法 `address` 已返回 HTTP 401 + body `code=401`；身份仍只依赖可伪造的地址头，不是 JWT
-3. 地址合法性只检查 `0x` + 长度 42，无 checksum、无 EIP-55
+2. 登录没有限流/锁定，token 为服务端会话（非 JWT），没有刷新机制；过期会话不会自动清理
+3. 地址合法性检查 `0x` + 40 位十六进制，无 EIP-55 checksum
 4. Solidity `^0.4.25`，未接 Foundry CI
 5. CORS 只在 `WebConfig` 放行 `localhost` / `127.0.0.1`（已去掉 `*` + Credentials；拦截器不再写 CORS 头）
 
-生产边界、为何 `address` 请求头不能作为生产鉴权、以及身份认证/依赖/合约测试的整改优先级见 [docs/production-boundaries.md](docs/production-boundaries.md)。
+生产边界、身份认证剩余缺口、以及依赖/合约测试的整改优先级见 [docs/production-boundaries.md](docs/production-boundaries.md)。

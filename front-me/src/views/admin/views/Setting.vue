@@ -121,11 +121,6 @@ export default {
                 }
             });
         },
-        logout() {
-            // 实现退出操作
-            localStorage.removeItem('userInfo');
-            this.$router.push('/login');
-        },
         async submitClear() {
             try {
                 await this.$confirm('此操作清空系统信息回归默认值，是否继续？', '提示', {

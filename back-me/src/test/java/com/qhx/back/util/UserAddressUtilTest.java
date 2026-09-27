@@ -23,8 +23,14 @@ class UserAddressUtilTest {
     }
 
     @Test
-    void 当前实现不校验十六进制_非hex仍算合法() {
-        // 记录现状，不是推荐；改校验时本用例应变红
-        assertTrue(UserAddressUtil.isLegalAddress("0x" + "z".repeat(40)));
+    void 必须是十六进制_非hex与全角数字均非法() {
+        assertFalse(UserAddressUtil.isLegalAddress("0x" + "z".repeat(40)));
+        assertFalse(UserAddressUtil.isLegalAddress("0x" + "０".repeat(40)));
+        assertFalse(UserAddressUtil.isLegalAddress("0x" + " ".repeat(40)));
+    }
+
+    @Test
+    void 大小写混合十六进制合法_不做EIP55校验() {
+        assertTrue(UserAddressUtil.isLegalAddress("0x" + "aBcDeF0123".repeat(4)));
     }
 }

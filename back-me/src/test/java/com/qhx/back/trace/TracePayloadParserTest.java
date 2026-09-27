@@ -33,7 +33,7 @@ class TracePayloadParserTest {
     @Test
     void 生产信息必须是8元组_否则视为未找到() {
         JSONArray revertLike = new JSONArray();
-        revertLike.add("Trace:traceNumber is not exists!");
+        revertLike.add("Trace: traceNumber does not exist");
         assertNull(TracePayloadParser.parseProducer("SY-missing", revertLike));
         assertNull(TracePayloadParser.parseProducer("SY-missing", null));
 

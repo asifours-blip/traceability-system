@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Message } from 'element-ui';
-import { localStorageService } from './commonUtil';
+import router from '@/router';
+import { getToken, clearLogin } from './auth';
 
 // 1. 配置请求根路径
 const instance = axios.create({
@@ -8,12 +9,12 @@ const instance = axios.create({
     timeout: 5000, // 请求超时时间
 });
 
-// 2. 请求拦截器
+// 2. 请求拦截器：只带服务端签发的 token，不再自报 address
 instance.interceptors.request.use(
     (config) => {
-        const userInfo = localStorageService.getItem('userInfo');
-        if (userInfo && userInfo.address) {
-            config.headers['address'] = userInfo.address
+        const token = getToken();
+        if (token) {
+            config.headers['Authorization'] = 'Bearer ' + token
         }
         return config;
     },
@@ -29,10 +30,25 @@ instance.interceptors.response.use(
         return success.data;
     },
     (error) => {
-        if (error.response && error.response.status === 401) {
-            const message = '未认证：请先登录或检查地址身份'
+        const response = error.response
+        const serverMes = response && response.data && response.data.mes
+        if (response && response.status === 401) {
+            const message = serverMes || '未登录或登录已失效，请重新登录'
+            // 登录接口自己的失败（密码错误）交给登录页提示
+            if (error.config && error.config.url === '/login') {
+                return { code: 401, mes: message }
+            }
+            clearLogin()
             Message.error(message)
+            if (router.currentRoute.path !== '/login') {
+                router.push('/login')
+            }
             return { code: 401, mes: message }
+        }
+        if (response && response.status === 403) {
+            const message = serverMes || '当前角色无权执行该操作'
+            Message.error(message)
+            return { code: 403, mes: message }
         }
         console.log(error);
         Message.error(error)
@@ -41,4 +57,3 @@ instance.interceptors.response.use(
 );
 // 导出封装后的axios实例
 export default instance;
-

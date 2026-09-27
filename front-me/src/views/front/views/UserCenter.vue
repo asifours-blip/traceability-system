@@ -11,11 +11,19 @@
 
             <div class="info-section">
                 <div class="info-item">
+                    <span class="label">用户名</span>
+                    <span class="value">{{ userInfo.username }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">公司/组织</span>
+                    <span class="value">{{ userInfo.companyName || '-' }}</span>
+                </div>
+                <div class="info-item">
                     <span class="label">用户类型</span>
                     <span class="value">{{ userInfo.typeName }}</span>
                 </div>
                 <div class="info-item">
-                    <span class="label">用户地址</span>
+                    <span class="label">绑定链上地址</span>
                     <span class="value address">{{ userInfo.address }}</span>
                 </div>
             </div>
@@ -33,6 +41,8 @@ export default {
     data() {
         return {
             userInfo: {
+                username: '',
+                companyName: '',
                 address: '',
                 typeName: ''
             }
@@ -40,17 +50,20 @@ export default {
     },
 
     mounted() {
-        let { type, address } = localStorageService.getItem('userInfo');
+        // 仅展示登录响应里的账号信息，身份以服务端 token 为准
+        let { type, address, username, companyName } = localStorageService.getItem('userInfo') || {};
         if (type === '0') {
             this.userInfo.typeName = '生产商';
         } else if (type === '1') {
             this.userInfo.typeName = '分销商';
         } else if (type === '2') {
             this.userInfo.typeName = '零售商';
-        } else {
-            this.userInfo.typeName = '消费者';
+        } else if (type === '4') {
+            this.userInfo.typeName = '管理员';
         }
         this.userInfo.address = address;
+        this.userInfo.username = username;
+        this.userInfo.companyName = companyName;
     },
 
     methods: {

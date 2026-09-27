@@ -3,7 +3,6 @@ package com.qhx.back.service.impl;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
-import com.qhx.back.context.AddressContext;
 import com.qhx.back.model.to.SystemInfoTo;
 import com.qhx.back.service.SystemInfoService;
 import com.qhx.back.util.HttpUtil;
@@ -21,7 +20,7 @@ public class SystemInfoServiceImpl implements SystemInfoService
     @Override
     public JSONObject getSystemInfo()
     {
-        JSONArray resJson = httpUtil.call(AddressContext.getAddress(), "getSystemInfo", List.of());
+        JSONArray resJson = httpUtil.call("getSystemInfo", List.of());
         JSONObject jsonObject = new JSONObject();
         jsonObject.putOpt("name", resJson.getStr(0));
         jsonObject.putOpt("version", resJson.getStr(1));
@@ -31,7 +30,7 @@ public class SystemInfoServiceImpl implements SystemInfoService
     @Override
     public String clearSystemInfo()
     {
-        String errMes = httpUtil.sendTransaction(AddressContext.getAddress(), "clearSystemInfo", List.of());
+        String errMes = httpUtil.sendTransaction("clearSystemInfo", List.of());
         if (StrUtil.isNotEmpty(errMes))
         {
             return errMes;
@@ -44,7 +43,7 @@ public class SystemInfoServiceImpl implements SystemInfoService
         String name = systemInfoTo.getName();
         String version = systemInfoTo.getVersion();
         String description = systemInfoTo.getDescription();
-        String errMes = httpUtil.sendTransaction(AddressContext.getAddress(), "setSystemInfo", List.of(name, version, description));
+        String errMes = httpUtil.sendTransaction("setSystemInfo", List.of(name, version, description));
         if (StrUtil.isNotEmpty(errMes))
         {
             return errMes;

@@ -2,8 +2,9 @@ package com.qhx.back.controller;
 
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
+import com.qhx.back.annotation.RequireRole;
 import com.qhx.back.client.WeBaseClient;
-import com.qhx.back.context.AddressContext;
+import com.qhx.back.enums.UserRole;
 import com.qhx.back.model.Result;
 import com.qhx.back.model.to.DistributorTo;
 import com.qhx.back.model.to.ProducerTo;
@@ -69,11 +70,12 @@ public class TraceController {
 
     // 生产者录入生产信息
     @PostMapping("/producer/add")
+    @RequireRole(UserRole.PRODUCER)
     @ApiOperation(value = "生产者录入生产信息")
     public Result addProducer(@RequestBody ProducerTo producerTO) {
-        String address = AddressContext.getAddress();
+        // 签名地址由 WeBaseClient 从当前会话绑定地址取得
         weBaseClient.sendTransaction(
-                address, "newAgroFood", Arrays.asList(
+                "newAgroFood", Arrays.asList(
                         producerTO.getTraceNumber(),
                         producerTO.getCompanyName(),
                         producerTO.getProductName(),
@@ -89,6 +91,7 @@ public class TraceController {
 
     // 生产者获取生产信息列表
     @GetMapping("/producer/list")
+    @RequireRole({UserRole.PRODUCER, UserRole.ADMIN})
     @ApiOperation(value = "生产者获取生产信息列表")
     public Result getProducerList() {
         JSONArray foodList = getFoodList();
@@ -103,10 +106,10 @@ public class TraceController {
 
     // 分销商录入分销信息
     @PostMapping("/distributor/add")
+    @RequireRole(UserRole.DISTRIBUTOR)
     @ApiOperation(value = "分销商录分销信息")
     public Result addDistributor(@RequestBody DistributorTo distributorTO) {
-        String address = AddressContext.getAddress();
-        weBaseClient.sendTransaction(address, "addTraceInfoByDistributor", Arrays.asList(
+        weBaseClient.sendTransaction("addTraceInfoByDistributor", Arrays.asList(
                 distributorTO.getTraceNumber(),
                 distributorTO.getCompanyName(),
                 distributorTO.getStorageCondition(),
@@ -122,6 +125,7 @@ public class TraceController {
 
     // 分销商获取分销信息列表
     @GetMapping("/distributor/list")
+    @RequireRole({UserRole.DISTRIBUTOR, UserRole.ADMIN})
     @ApiOperation(value = "分销商获取分销信息列表")
     public Result getDistributorList() {
         JSONArray foodList = getFoodList();
@@ -139,10 +143,10 @@ public class TraceController {
 
     // 零售商添加销售信息
     @PostMapping("/retailer/add")
+    @RequireRole(UserRole.RETAILER)
     @ApiOperation(value = "零售商添加销售信息")
     public Result addRetailer(@RequestBody RetailerTo retailerTO) {
-        String address = AddressContext.getAddress();
-        weBaseClient.sendTransaction(address, "addTraceInfoByRetailer", Arrays.asList(
+        weBaseClient.sendTransaction("addTraceInfoByRetailer", Arrays.asList(
                 retailerTO.getTraceNumber(),
                 retailerTO.getCompanyName(),
                 retailerTO.getSalePrice(),
@@ -156,6 +160,7 @@ public class TraceController {
 
     // 零售商获取销售信息列表
     @GetMapping("/retailer/list")
+    @RequireRole({UserRole.RETAILER, UserRole.ADMIN})
     @ApiOperation(value = "零售商获取销售信息列表")
     public Result getRetailerList() {
         JSONArray foodList = getFoodList();

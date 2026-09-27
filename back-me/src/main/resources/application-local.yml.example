@@ -17,3 +17,10 @@ webase-front:
 ipfs:
   host: '127.0.0.1'
   port: 5001
+
+# 账号体系：先执行 src/main/resources/db/auth-schema.sql 建表
+# 首次启动管理员通过环境变量注入，不要把初始密码写进本文件：
+#   ADMIN_INITIAL_PASSWORD  必填（至少 8 位），缺失则不创建管理员并打 ERROR 日志
+#   ADMIN_USERNAME          可选，默认 admin
+#   ADMIN_ADDRESS           可选，默认 contract.owner（须是 WeBASE-Front 托管私钥的地址）
+#   AUTH_TOKEN_TTL_HOURS    可选，默认 12

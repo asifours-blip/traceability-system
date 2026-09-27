@@ -3,6 +3,7 @@ package com.qhx.back.util;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import com.qhx.back.context.AddressContext;
 import com.qhx.back.exception.WeBaseFrontException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -34,7 +35,8 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
     @Value("${contract.abi}")
     public String CONTRACT_ABI;
 
-    public String contractRequest(String userAddress, String funcName, List<Object> params) {
+    // 只在本类内部决定 user（签名地址）；不对外暴露，避免绕过 sendTransaction 的地址来源限制
+    protected String contractRequest(String userAddress, String funcName, List<Object> params) {
         JSONObject requestBody = new JSONObject();
         requestBody.putOpt("contractName", CONTRACT_NAME);
         requestBody.putOpt("contractAddress", CONTRACT_ADDRESS);
@@ -55,7 +57,8 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
 
     }
 
-    public JSONArray call(String userAddress, String funcName, List<Object> params) {
+    // 只读调用不签名，user 固定为 owner
+    private JSONArray call(String userAddress, String funcName, List<Object> params) {
         String response = contractRequest(userAddress, funcName, params);
         try {
             JSONArray resJson = JSONUtil.parseArray(response);
@@ -67,11 +70,12 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
     }
 
     public String sendTransaction(String funcName, List<Object> params) {
-        return sendTransaction(OWNER, funcName, params);
-    }
-
-    public String sendTransaction(String userAddress, String funcName, List<Object> params) {
-        String response = contractRequest(userAddress, funcName, params);
+        // 签名地址只来自服务端会话绑定的地址（拦截器写入 AddressContext）
+        String signer = AddressContext.getAddress();
+        if (!UserAddressUtil.isLegalAddress(signer)) {
+            throw new IllegalStateException("当前会话没有绑定合法的链上地址，拒绝发送交易");
+        }
+        String response = contractRequest(signer, funcName, params);
         try {
             JSONObject resJson = JSONUtil.parseObj(response);
             if (resJson.getBool("statusOK")) {

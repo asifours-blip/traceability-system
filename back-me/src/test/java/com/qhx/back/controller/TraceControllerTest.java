@@ -101,7 +101,6 @@ class TraceControllerTest {
 
     @Test
     void 生产上链走newAgroFood() {
-        AddressContext.setAddress("0x" + "b".repeat(40));
         ProducerTo to = new ProducerTo();
         to.setTraceNumber("SY1");
         to.setCompanyName("农场A");
@@ -113,7 +112,6 @@ class TraceControllerTest {
         to.setProductTime("2026-01-01");
         controller.addProducer(to);
         verify(weBaseClient).sendTransaction(
-                eq("0x" + "b".repeat(40)),
                 eq("newAgroFood"),
                 eq(Arrays.asList("SY1", "农场A", "苹果", "烟台", "红富士", "B001", "QmCid", "2026-01-01"))
         );
@@ -121,7 +119,6 @@ class TraceControllerTest {
 
     @Test
     void 分销追加走addTraceInfoByDistributor() {
-        AddressContext.setAddress("0x" + "c".repeat(40));
         DistributorTo to = new DistributorTo();
         to.setTraceNumber("SY1");
         to.setCompanyName("仓配");
@@ -134,7 +131,6 @@ class TraceControllerTest {
         to.setInspectionReport("QmR");
         controller.addDistributor(to);
         verify(weBaseClient).sendTransaction(
-                eq("0x" + "c".repeat(40)),
                 eq("addTraceInfoByDistributor"),
                 eq(Arrays.asList("SY1", "仓配", "冷藏", "货车", "D01", "济南", 10L, 100L, "QmR"))
         );
@@ -142,7 +138,6 @@ class TraceControllerTest {
 
     @Test
     void 零售追加走addTraceInfoByRetailer() {
-        AddressContext.setAddress("0x" + "d".repeat(40));
         RetailerTo to = new RetailerTo();
         to.setTraceNumber("SY1");
         to.setCompanyName("门店");
@@ -153,7 +148,6 @@ class TraceControllerTest {
         to.setSaleTime("2026-02-01");
         controller.addRetailer(to);
         verify(weBaseClient).sendTransaction(
-                eq("0x" + "d".repeat(40)),
                 eq("addTraceInfoByRetailer"),
                 eq(Arrays.asList("SY1", "门店", 20L, 5L, 7L, "INV-1", "2026-02-01"))
         );
@@ -161,7 +155,6 @@ class TraceControllerTest {
 
     @Test
     void 角色不足时WeBASE异常向上抛() {
-        AddressContext.setAddress("0x" + "e".repeat(40));
         ProducerTo to = new ProducerTo();
         to.setTraceNumber("SY1");
         to.setCompanyName("农场A");
@@ -173,8 +166,7 @@ class TraceControllerTest {
         to.setProductTime("2026-01-01");
         org.mockito.Mockito.doThrow(new WeBaseFrontException("caller does not have the Producer role"))
                 .when(weBaseClient)
-                .sendTransaction(org.mockito.ArgumentMatchers.anyString(),
-                        org.mockito.ArgumentMatchers.eq("newAgroFood"),
+                .sendTransaction(org.mockito.ArgumentMatchers.eq("newAgroFood"),
                         org.mockito.ArgumentMatchers.anyList());
         WeBaseFrontException ex = assertThrows(WeBaseFrontException.class, () -> controller.addProducer(to));
         assertEquals("caller does not have the Producer role", ex.getMessage());

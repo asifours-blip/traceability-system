@@ -64,7 +64,7 @@ class TraceControllerTest {
     @Test
     void 无此溯源号_抛错() {
         JSONArray missing = new JSONArray();
-        missing.add("not exists");
+        missing.add("Trace: traceNumber does not exist");
         when(weBaseClient.call(eq("getAgroFoodInfo"), eq(List.of("NOPE"))))
                 .thenReturn(missing);
         RuntimeException ex = assertThrows(RuntimeException.class, () -> controller.getTrace("NOPE"));

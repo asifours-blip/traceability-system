@@ -79,7 +79,7 @@ public class FakeWeBaseFront implements AutoCloseable {
         } else if ("getSystemInfo".equals(funcName)) {
             response = "[\"溯源系统\",\"1.0\",\"测试\"]";
         } else if (funcName.startsWith("get")) {
-            response = "[\"not exists\"]";
+            response = "[\"Trace: traceNumber does not exist\"]";
         } else {
             response = "{\"statusOK\":true}";
         }

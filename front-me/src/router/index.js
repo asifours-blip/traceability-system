@@ -76,6 +76,15 @@ const routes = [
                 }
             },
             {
+                // 批次详情：溯源号在路径里，阶段在 ?stage= 里，刷新或直链都能回到同一批次同一阶段
+                path: '/batch/:traceNumber',
+                name: 'batch-detail',
+                component: () => import('@/views/front/views/BatchDetail.vue'),
+                meta: {
+                    title: '批次详情',
+                }
+            },
+            {
                 path: '/trace',
                 name: 'trace',
                 component: () => import('@/views/front/views/Trace.vue'),
@@ -147,7 +156,8 @@ router.beforeEach((to, from, next) => {
         if (anonymousAllowed) {
             next()
         } else {
-            next('/login')
+            // 记住原地址，登录后回来
+            next({ path: '/login', query: { redirect: to.fullPath } })
         }
         return
     }
@@ -164,7 +174,7 @@ router.beforeEach((to, from, next) => {
     // 公共路由（所有角色可访问）
     const publicRoutes = [
         '/trace', '/traceList', '/iot-dashboard', '/userCenter',
-        '/traceDetail', '/qrcodeTrace',
+        '/traceDetail', '/qrcodeTrace', '/batch/',
         '/login'
     ]
     // 生产商专属路由

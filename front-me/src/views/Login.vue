@@ -70,6 +70,12 @@ export default {
         }
         saveLogin(data)
         this.$message.success('登录成功')
+        // 登录过期被跳转过来的：回到原页面（只接受站内相对路径）
+        const redirect = this.$route.query.redirect
+        if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.startsWith('/login')) {
+          this.$router.push(redirect).catch(() => {})
+          return
+        }
         this.$router.push(data.user.role === 'ADMIN' ? '/admin' : '/userCenter')
       });
     },

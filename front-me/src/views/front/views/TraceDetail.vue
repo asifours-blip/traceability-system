@@ -1,158 +1,48 @@
 <template>
   <div class="page-container">
-    <div class="detail-card">
+    <div class="detail-card" v-loading="loading">
       <h2 class="card-title">农产品溯源详情</h2>
-      <p class="card-subtitle">追溯农产品的生产、分销与零售全过程</p>
+      <p class="card-subtitle">溯源号 {{ traceNumber }} · 以下为链上原始记录；「链下更正」为写入者事后追加的说明，链上记录本身不会被修改</p>
 
-      <el-timeline class="apple-timeline">
-        <!-- 生产阶段 -->
-        <el-timeline-item
-            v-if="detail.producer"
-            :timestamp="formatTime(detail.producer.timestamp)"
-            placement="top"
-        >
-          <el-card class="timeline-card">
-            <h4 class="stage-title">生产阶段</h4>
-            <div class="info-grid">
-              <div class="info-item">
-                <strong>溯源码：</strong
-                ><span class="value-text">{{ detail.producer.traceNumber }}</span>
-              </div>
-              <div class="info-item">
-                <strong>公司名称：</strong
-                ><span class="value-text">{{ detail.producer.companyName }}</span>
-              </div>
-              <div class="info-item">
-                <strong>产品名称：</strong
-                ><span class="value-text">{{ detail.producer.productName }}</span>
-              </div>
-              <div class="info-item">
-                <strong>生产地点：</strong
-                ><span class="value-text">{{ detail.producer.productionLocation }}</span>
-              </div>
-              <div class="info-item">
-                <strong>品种：</strong><span class="value-text">{{ detail.producer.variety }}</span>
-              </div>
-              <div class="info-item">
-                <strong>生产批次：</strong
-                ><span class="value-text">{{ detail.producer.productionBatch }}</span>
-              </div>
-              <div class="info-item">
-                <strong>生产认证：</strong
-                ><el-button
-                  type="text"
-                  class="preview-btn"
-                  @click="$store.commit('showImg', detail.producer.productionCert)"
-              >预览</el-button
-              >
-              </div>
-              <div class="info-item">
-                <strong>生产时间：</strong
-                ><span class="value-text">{{ detail.producer.productTime }}</span>
-              </div>
-            </div>
-          </el-card>
-        </el-timeline-item>
+      <el-alert v-if="error" :title="error" type="error" show-icon :closable="false"></el-alert>
 
-        <!-- 分销阶段 -->
-        <el-timeline-item
-            v-if="Object.keys(detail.distributor).length > 0"
-            :timestamp="formatTime(detail.distributor.timestamp)"
-            placement="top"
-        >
-          <el-card class="timeline-card">
-            <h4 class="stage-title">分销阶段</h4>
-            <div class="info-grid">
-              <div class="info-item">
-                <strong>溯源码：</strong
-                ><span class="value-text">{{ detail.distributor.traceNumber }}</span>
+      <el-timeline v-if="detail" class="apple-timeline">
+        <template v-for="stage in stages">
+          <el-timeline-item v-if="recorded(stage)" :key="stage.key"
+            :timestamp="'上链时间 ' + formatTime(detail[stage.legacy].timestamp)" placement="top">
+            <el-card class="timeline-card">
+              <h4 class="stage-title">{{ stage.label }}阶段</h4>
+              <div class="info-grid">
+                <div v-for="f in publicFields(stage)" :key="f.name" class="info-item">
+                  <strong>{{ f.label }}：</strong>
+                  <span class="value-text">
+                    {{ detail[stage.legacy][f.name] }}
+                    <el-tooltip v-for="c in correctionsOf(stage, f.name)" :key="c.id + f.name" placement="top"
+                      :content="'原因：' + c.reason + '（' + (c.authorCompany || '写入者') + '，' + formatTime(c.createdAt) + '）'">
+                      <el-tag size="mini" type="warning" class="corr-tag">链下更正：{{ c.value }}</el-tag>
+                    </el-tooltip>
+                  </span>
+                </div>
+                <div v-if="stage.file && detail[stage.legacy].hasFile" class="info-item">
+                  <strong>{{ stage.fileLabel }}：</strong>
+                  <el-image :src="fileUrl(stage)" :preview-src-list="[fileUrl(stage)]" fit="contain" class="thumb">
+                    <div slot="error" class="thumb-error">文件读取失败</div>
+                  </el-image>
+                </div>
               </div>
-              <div class="info-item">
-                <strong>公司名称：</strong
-                ><span class="value-text">{{ detail.distributor.companyName }}</span>
+              <div v-if="proofOf(stage).txHash" class="proof">
+                交易哈希 <code>{{ proofOf(stage).txHash }}</code>
+                <span v-if="proofOf(stage).blockNumber"> · 块高 {{ proofOf(stage).blockNumber }}</span>
               </div>
-              <div class="info-item">
-                <strong>存储条件：</strong
-                ><span class="value-text">{{ detail.distributor.storageCondition }}</span>
-              </div>
-              <div class="info-item">
-                <strong>运输方式：</strong
-                ><span class="value-text">{{ detail.distributor.transportMethod }}</span>
-              </div>
-              <div class="info-item">
-                <strong>分销批次：</strong
-                ><span class="value-text">{{ detail.distributor.distributeBatch }}</span>
-              </div>
-              <div class="info-item">
-                <strong>存储地点：</strong
-                ><span class="value-text">{{ detail.distributor.storageLocation }}</span>
-              </div>
-              <div class="info-item">
-                <strong>分销价格(w)：</strong
-                ><span class="value-text">{{ detail.distributor.distributePrice }}</span>
-              </div>
-              <div class="info-item">
-                <strong>分销数量(kg)：</strong
-                ><span class="value-text">{{ detail.distributor.distributeQuantity }}</span>
-              </div>
-              <div class="info-item">
-                <strong>检验报告：</strong
-                ><el-button
-                  type="text"
-                  class="preview-btn"
-                  @click="$store.commit('showImg', detail.distributor.inspectionReport)"
-              >预览</el-button
-              >
-              </div>
-            </div>
-          </el-card>
-        </el-timeline-item>
-
-        <!-- 零售阶段 -->
-        <el-timeline-item
-            v-if="Object.keys(detail.retailer).length > 0"
-            :timestamp="formatTime(detail.retailer.timestamp)"
-            placement="top"
-        >
-          <el-card class="timeline-card">
-            <h4 class="stage-title">零售阶段</h4>
-            <div class="info-grid">
-              <div class="info-item">
-                <strong>溯源码：</strong
-                ><span class="value-text">{{ detail.retailer.traceNumber }}</span>
-              </div>
-              <div class="info-item">
-                <strong>公司名称：</strong
-                ><span class="value-text">{{ detail.retailer.companyName }}</span>
-              </div>
-              <div class="info-item">
-                <strong>销售价格(w)：</strong
-                ><span class="value-text">{{ detail.retailer.salePrice }}</span>
-              </div>
-              <div class="info-item">
-                <strong>销售数量(kg)：</strong
-                ><span class="value-text">{{ detail.retailer.saleQuantity }}</span>
-              </div>
-              <div class="info-item">
-                <strong>保质期(天)：</strong
-                ><span class="value-text">{{ detail.retailer.shelfLife }}</span>
-              </div>
-              <div class="info-item">
-                <strong>发票号：</strong><span class="value-text">{{ detail.retailer.invoiceNo }}</span>
-              </div>
-              <div class="info-item">
-                <strong>销售时间：</strong
-                ><span class="value-text">{{ detail.retailer.saleTime }}</span>
-              </div>
-            </div>
-          </el-card>
-        </el-timeline-item>
+            </el-card>
+          </el-timeline-item>
+        </template>
       </el-timeline>
 
-      <!-- 新增：物联网监测区块 -->
-      <el-card v-if="traceNumber" class="iot-card">
+      <!-- 物联网监测区块：IoT 接口需要登录，消费者（未登录）不展示 -->
+      <el-card v-if="traceNumber && detail && loggedIn" class="iot-card">
         <div slot="header">
-          <span>🌱 生长环境监测（物联网数据）</span>
+          <span>生长环境监测（物联网数据，定时模拟任务生成，非真实传感器）</span>
         </div>
         <IotChart :batchId="traceNumber" />
       </el-card>
@@ -161,33 +51,74 @@
 </template>
 
 <script>
-import IotChart from "@/components/IotChart.vue"; // 引入物联网图表组件
-import { getTraceDetail } from "@/apis/trace"
+import IotChart from "@/components/IotChart.vue";
+import { getTraceDetail, publicFileUrl } from "@/apis/trace"
+import { STAGES, STAGE_FIELDS, formatTime } from "@/utils/traceFields"
+import { getToken } from "@/utils/auth"
 
+// 消费者扫码页（免登录）：后端只返回公开字段，这里也只按公开字段清单展示
 export default {
   name: "trace-detail",
   components: {
-    IotChart, // 注册组件
+    IotChart,
   },
   data() {
     return {
-      detail: {},
+      stages: STAGES,
+      detail: null,
+      loading: false,
+      error: '',
+      loggedIn: !!getToken()
     };
   },
   computed: {
-    // 从路由参数获取溯源码，作为物联网数据的批次号
     traceNumber() {
       return this.$route.params.traceNumber;
     },
   },
-  async created() {
-    const { data } = await getTraceDetail(this.$route.params.traceNumber);
-    this.detail = data || {};
+  watch: {
+    traceNumber() {
+      this.load()
+    }
+  },
+  created() {
+    this.load()
   },
   methods: {
-    formatTime(timestamp) {
-      return this.dateTimeUtils.formatTimestamp(timestamp);
+    formatTime,
+    async load() {
+      this.loading = true
+      const res = await getTraceDetail(this.traceNumber);
+      this.loading = false
+      if (res.code === 200) {
+        this.detail = res.data
+        this.error = ''
+      } else {
+        this.detail = null
+        this.error = res.code === 404 ? '未找到该溯源号的链上记录' : res.mes
+      }
     },
+    recorded(stage) {
+      const d = this.detail && this.detail[stage.legacy]
+      return d && Object.keys(d).length > 0
+    },
+    publicFields(stage) {
+      return STAGE_FIELDS[stage.key].filter(f => f.public)
+    },
+    proofOf(stage) {
+      return (this.detail.stages || []).find(s => s.stage === stage.key) || {}
+    },
+    // 某字段的全部链下更正（按提交顺序）
+    correctionsOf(stage, field) {
+      const list = []
+      ;(this.proofOf(stage).corrections || []).forEach(c => {
+        c.fields.filter(f => f.field === field).forEach(f => list.push({ ...c, value: f.value }))
+      })
+      return list
+    },
+    fileUrl(stage) {
+      return publicFileUrl(this.traceNumber, stage.file)
+    }
   },
 };
 </script>
@@ -204,6 +135,7 @@ export default {
 }
 
 .detail-card {
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -306,6 +238,31 @@ export default {
 .preview-btn:hover {
   text-decoration: underline;
 }
+.corr-tag {
+  margin-left: 6px;
+  cursor: help;
+}
+
+.thumb {
+  width: 120px;
+  height: 90px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.thumb-error {
+  font-size: 12px;
+  color: #86868b;
+  padding: 30px 8px;
+}
+
+.proof {
+  margin-top: 14px;
+  font-size: 12px;
+  color: #86868b;
+  word-break: break-all;
+}
+
 .iot-card {
   margin-top: 30px;
 }

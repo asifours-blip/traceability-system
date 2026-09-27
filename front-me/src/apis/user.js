@@ -1,4 +1,4 @@
-import request from '@/utils/request'
+import request, { TX_TIMEOUT } from '@/utils/request'
 
 export const login = (data) => {
     return request({
@@ -24,18 +24,43 @@ export const listUsers = () => {
     })
 }
 
+// 建号可能发授权交易：链上已有角色则跳过；结果未知时返回 202，账号保持停用
 export const createUser = (data) => {
     return request({
         url: '/admin/users',
         method: 'post',
-        data
+        data,
+        timeout: TX_TIMEOUT,
+        tx: true
     })
 }
 
 export const disableUser = (id) => {
     return request({
         url: `/admin/users/${id}/disable`,
-        method: 'post'
+        method: 'post',
+        timeout: TX_TIMEOUT,
+        tx: true
+    })
+}
+
+// 授权交易结果未知的账号：查证链上角色，已有则启用
+export const verifyUserRole = (id) => {
+    return request({
+        url: `/admin/users/${id}/verify-role`,
+        method: 'post',
+        timeout: TX_TIMEOUT,
+        tx: true
+    })
+}
+
+// 链上仍无角色时重新发送授权交易
+export const retryGrantRole = (id) => {
+    return request({
+        url: `/admin/users/${id}/grant-role`,
+        method: 'post',
+        timeout: TX_TIMEOUT,
+        tx: true
     })
 }
 

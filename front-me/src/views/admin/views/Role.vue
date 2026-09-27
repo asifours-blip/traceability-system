@@ -51,12 +51,24 @@
         <el-table-column label="状态" min-width="60">
           <template slot-scope="scope">
             <span v-if="scope.row.enabled" style="color: #52c41a;">启用</span>
+            <span v-else-if="scope.row.roleState === 'PENDING'" style="color: #faad14;">待确认</span>
             <span v-else style="color: #faad14;">停用</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="链上授权" min-width="90">
+          <template slot-scope="scope">
+            <el-tooltip v-if="scope.row.roleState" :content="scope.row.roleNote || ''" placement="top">
+              <span>{{ roleStateLabel(scope.row.roleState) }}</span>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column label="操作" min-width="140">
           <template slot-scope="scope">
-            <template v-if="scope.row.role !== 'ADMIN'">
+            <template v-if="scope.row.role !== 'ADMIN' && scope.row.roleState === 'PENDING'">
+              <el-button type="text" @click="verifyRole(scope.row)">查证</el-button>
+              <el-button type="text" @click="retryGrant(scope.row)">重试授权</el-button>
+            </template>
+            <template v-else-if="scope.row.role !== 'ADMIN'">
               <el-button type="text" @click="checkChainRole(scope.row)">核对链上角色</el-button>
               <!-- 停用失败时（链上撤销未成功）可对已停用账号重试 -->
               <el-button type="text" class="danger-text" @click="disable(scope.row)">
@@ -71,7 +83,7 @@
 </div>
 </template>
 <script>
-import { listUsers, createUser, disableUser, getChainRole } from '@/apis/user'
+import { listUsers, createUser, disableUser, getChainRole, verifyUserRole, retryGrantRole } from '@/apis/user'
 
 export default {
   name: "Role",
@@ -124,12 +136,16 @@ export default {
         }
         const res = await createUser(this.userForm)
         if (res.code == 200) {
-          this.$message.success("账号已创建，链上角色已授予")
+          this.$message.success(res.data.roleState === 'ALREADY_ON_CHAIN'
+            ? '账号已创建：链上已拥有该角色，未发授权交易' : '账号已创建，链上角色已授予')
           this.$refs[formName].resetFields()
-          this.fetchUsers()
+        } else if (res.code == 202 || res.code === 'TIMEOUT') {
+          // 授权交易结果未知：账号已建但保持停用，在列表里查证后启用
+          this.$message({ type: 'warning', message: res.mes, duration: 8000, showClose: true })
         } else {
           this.$message.error(res.mes)
         }
+        this.fetchUsers()
       });
     },
     disable(row) {
@@ -154,6 +170,27 @@ export default {
       } else {
         this.$message.error(res.mes)
       }
+    },
+    async verifyRole(row) {
+      const res = await verifyUserRole(row.id)
+      if (res.code == 200) {
+        this.$message.success('链上已有该角色，账号已启用')
+      } else {
+        this.$message({ type: 'warning', message: res.mes, duration: 8000, showClose: true })
+      }
+      this.fetchUsers()
+    },
+    async retryGrant(row) {
+      const res = await retryGrantRole(row.id)
+      if (res.code == 200) {
+        this.$message.success('授权已确认，账号已启用')
+      } else {
+        this.$message({ type: res.code == 202 ? 'warning' : 'error', message: res.mes, duration: 8000, showClose: true })
+      }
+      this.fetchUsers()
+    },
+    roleStateLabel(state) {
+      return { GRANTED_BY_TX: '交易已确认', ALREADY_ON_CHAIN: '链上已有（未发交易）', PENDING: '待确认' }[state] || state
     },
     getRoleLabel(role) {
       const found = this.options.find(item => item.value === role)

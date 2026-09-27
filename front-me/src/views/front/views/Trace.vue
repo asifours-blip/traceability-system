@@ -7,7 +7,8 @@
         </div>
         <el-form :model="form" ref="form" class="apple-form">
             <el-form-item label="" prop="traceNumber">
-                <el-input v-model.number="form.traceNumber" type="textarea" :rows="3" placeholder="请输入您想要查询的溯源码"
+                <el-input v-model.trim="form.traceNumber" type="textarea" :rows="3" placeholder="请输入您想要查询的溯源号"
+                    @input="form.traceNumber = (form.traceNumber || '').toUpperCase()"
                     @clear="onSearch = false;" class="custom-textarea"></el-input>
             </el-form-item>
             <el-button type="primary" @click="onSubmit" class="submit-btn">查询</el-button>
@@ -20,11 +21,12 @@
             <p class="card-subtitle">查询到的农产品溯源信息</p>
         </div>
         <div v-if="!onSearch" class="info-tip">请在左侧查询栏中输入溯源码进行查询</div>
-        <div v-else-if="Object.keys(detail).length === 0" class="info-tip no-data">该溯源码无对应信息，请确认后重新查询</div>
+        <div v-else-if="!detail" class="info-tip no-data">{{ notFound }}</div>
 
         <!-- 溯源查询成功后才展示 -->
         <div v-else class="result-actions">
-            <el-button type="primary" @click="$router.push({ path: '/traceDetail/' + form.traceNumber })"
+            <p>{{ detail.producer.productName }} · {{ detail.producer.companyName }}</p>
+            <el-button type="primary" @click="$router.push({ path: '/traceDetail/' + encodeURIComponent(form.traceNumber) })"
                 class="detail-btn">查看详情</el-button>
         </div>
     </div>
@@ -32,6 +34,8 @@
 </template>
 
 <script>
+import { getTraceDetail } from '@/apis/trace'
+
 export default {
     name: 'trace-view',
     data() {
@@ -39,7 +43,8 @@ export default {
             form: {
                 traceNumber: '', // 输入的溯源码
             },
-            detail: [], // 溯源详细信息
+            detail: null, // 公开溯源信息
+            notFound: '',
             onSearch: false, // 搜索情况
         };
     },
@@ -48,8 +53,9 @@ export default {
             if (!this.form.traceNumber)
                 return this.$message.error('请输入溯源码');
             this.onSearch = true;
-            const { data } = await this.$http.get('/trace/detail/' + this.form.traceNumber)
-            this.detail = data || [];
+            const res = await getTraceDetail(this.form.traceNumber)
+            this.detail = res.code === 200 ? res.data : null;
+            this.notFound = res.code === 404 ? '该溯源号无对应信息，请确认后重新查询' : res.mes;
         }
     },
 };

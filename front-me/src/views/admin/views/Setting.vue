@@ -130,6 +130,11 @@ export default {
                 return this.$message.warning('已取消')
             }
             clearSystemInfo().then(response => {
+                if (response.code == 200) {
+                    this.$message.success('已清空');
+                } else {
+                    this.$message.error(response.mes);
+                }
                 this.fetchSystemInfo();
             })
         }

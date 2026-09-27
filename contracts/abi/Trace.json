@@ -54,6 +54,33 @@
         "type": "string"
       }
     ],
+    "name": "getStageActors",
+    "outputs": [
+      {
+        "name": "producer",
+        "type": "address"
+      },
+      {
+        "name": "distributor",
+        "type": "address"
+      },
+      {
+        "name": "retailer",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
     "name": "getAgroFoodInfo",
     "outputs": [
       {
@@ -91,6 +118,34 @@
     ],
     "payable": false,
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeProducer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -141,6 +196,20 @@
     ],
     "payable": false,
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeRetailer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -210,6 +279,20 @@
     "outputs": [],
     "payable": false,
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -482,6 +565,28 @@
     "payable": false,
     "stateMutability": "nonpayable",
     "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "name": "stage",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "name": "actor",
+        "type": "address"
+      }
+    ],
+    "name": "TraceStageRecorded",
+    "type": "event"
   },
   {
     "anonymous": false,

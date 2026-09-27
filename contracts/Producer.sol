@@ -1,9 +1,10 @@
 pragma solidity ^0.4.25;
 
+import "./Ownable.sol";
 import "./Roles.sol";
 
-//生产者角色
-contract Producer {
+//生产者角色：只有 owner 能授予/撤销，持有者之间不能互相授权
+contract Producer is Ownable {
     using Roles for Roles.Role;
 
     event ProducerAdded(address indexed account);
@@ -12,7 +13,10 @@ contract Producer {
     Roles.Role private _producers;
 
     constructor(address producer) public {
-        _addProducer(producer);
+        // 0 地址表示部署时暂不指定，之后由 owner 调用 addProducer 授予
+        if (producer != address(0)) {
+            _addProducer(producer);
+        }
     }
 
     modifier onlyProducer() {
@@ -27,8 +31,12 @@ contract Producer {
         return _producers.has(account);
     }
 
-    function addProducer(address account) public onlyProducer {
+    function addProducer(address account) public onlyOwner {
         _addProducer(account);
+    }
+
+    function removeProducer(address account) public onlyOwner {
+        _removeProducer(account);
     }
 
     function renounceProducer() public {

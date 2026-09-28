@@ -20,6 +20,16 @@
         :title="'链上数据暂时读不到：' + detail.chainError"
         description="下面只显示本系统的交易记录，不代表链上状态；录入与更正暂不可用，请稍后刷新。"></el-alert>
 
+      <div class="block" v-if="detail.contractVersion">
+        <el-tag size="small">合约 {{ detail.contractVersion }}</el-tag>
+        <span class="mono" v-if="detail.contractAddress"> {{ detail.contractAddress }}</span>
+        <div v-if="detail.contractVersion === 'V3'" class="hint">
+          链上指定分销商：<span class="mono">{{ detail.chainDesignatedDistributor || '尚未上链' }}</span><br>
+          链上指定零售商：<span class="mono">{{ detail.chainDesignatedRetailer || '尚未上链' }}</span>
+        </div>
+        <div v-else class="hint">v2 批次的交接对象由后端台账校验</div>
+      </div>
+
       <div class="parties">
         <div class="party">
           <span class="party-label">生产商</span>

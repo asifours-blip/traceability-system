@@ -3,7 +3,7 @@
   <div class="form-card">
     <div class="card-header">
       <h2 class="card-title">生产信息登记</h2>
-      <p class="card-subtitle">建档即上链；必须指定下游分销商，只有被指定的分销商能录入分销信息</p>
+      <p class="card-subtitle">建档时一并指定下游分销商；v3 合约会在链上核验分销写入者</p>
     </div>
     <el-form :model="form" :rules="rules" ref="createForm" label-width="110px" class="apple-form">
       <el-form-item label="溯源号" prop="traceNumber" :error="serverErrors.traceNumber">

@@ -1,6 +1,6 @@
 <template>
 <div class="page-container">
-  <BatchTable title="指定给我的批次（分销）" subtitle="只显示生产商指定给本账号的批次；进入详情录入分销信息并指定零售商" my-stage="DISTRIBUTION"></BatchTable>
+  <BatchTable title="指定给我的批次（分销）" subtitle="只显示生产商指定给本账号的批次；进入详情录入分销信息，随交易在链上指定零售商" my-stage="DISTRIBUTION"></BatchTable>
 </div>
 </template>
 

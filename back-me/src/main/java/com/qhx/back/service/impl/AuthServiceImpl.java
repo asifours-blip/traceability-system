@@ -5,6 +5,7 @@ import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.qhx.back.exception.AuthException;
+import com.qhx.back.exception.LoginRateLimitException;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.mapper.UserSessionMapper;
 import com.qhx.back.model.UserAccount;
@@ -12,6 +13,7 @@ import com.qhx.back.model.UserSession;
 import com.qhx.back.model.vo.LoginVO;
 import com.qhx.back.model.vo.UserVO;
 import com.qhx.back.service.AuthService;
+import com.qhx.back.service.LoginRateLimiter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -37,12 +39,30 @@ public class AuthServiceImpl implements AuthService
     private UserAccountMapper userAccountMapper;
     @Autowired
     private UserSessionMapper userSessionMapper;
+    @Autowired
+    private LoginRateLimiter loginRateLimiter;
 
     @Value("${auth.token-ttl-hours:12}")
     private long tokenTtlHours;
 
     @Override
-    public LoginVO login(String username, String password)
+    public LoginVO login(String username, String password, String clientIp)
+    {
+        long retryAfter = loginRateLimiter.secondsUntilRetry(username, clientIp);
+        if (retryAfter > 0) {
+            throw new LoginRateLimitException(retryAfter, "登录失败次数过多，请在 " + retryAfter + " 秒后重试");
+        }
+        try {
+            LoginVO result = doLogin(username, password);
+            loginRateLimiter.recordSuccess(username, clientIp);
+            return result;
+        } catch (AuthException e) {
+            loginRateLimiter.recordFailure(username, clientIp);
+            throw e;
+        }
+    }
+
+    private LoginVO doLogin(String username, String password)
     {
         if (StrUtil.isBlank(username) || StrUtil.isEmpty(password)) {
             throw new AuthException(HttpServletResponse.SC_UNAUTHORIZED, LOGIN_FAILED);

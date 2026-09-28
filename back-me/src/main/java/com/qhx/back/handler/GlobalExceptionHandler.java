@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.qhx.back.exception.AuthException;
 import com.qhx.back.exception.BusinessException;
 import com.qhx.back.exception.ChainTxException;
+import com.qhx.back.exception.LoginRateLimitException;
 import com.qhx.back.exception.ValidationException;
 import com.qhx.back.exception.WeBaseFrontException;
 import com.qhx.back.file.FileRejectedException;
@@ -41,6 +42,16 @@ public class GlobalExceptionHandler
     {
         return ResponseEntity.status(exception.getStatus())
                 .body(new Result(null, exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 登录限流：429，Retry-After 头带上还需等待的秒数
+    @ExceptionHandler(LoginRateLimitException.class)
+    public ResponseEntity<Result> handlerLoginRateLimit(LoginRateLimitException exception)
+    {
+        return ResponseEntity.status(429)
+                .header("Retry-After", String.valueOf(exception.getRetryAfterSeconds()))
+                .body(new Result(null, exception.getMessage(), 429));
     }
 
 

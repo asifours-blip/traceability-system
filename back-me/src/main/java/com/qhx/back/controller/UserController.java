@@ -10,6 +10,7 @@ import com.qhx.back.model.to.LoginTo;
 import com.qhx.back.model.to.UserTo;
 import com.qhx.back.service.AuthService;
 import com.qhx.back.service.UserAccountService;
+import com.qhx.back.util.ClientIpUtil;
 import com.qhx.back.util.UserAddressUtil;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -32,11 +33,11 @@ public class UserController {
     @Autowired
     private WeBaseClient weBaseClient;
 
-    // 用户名 + 密码登录，返回 Bearer token
+    // 用户名 + 密码登录，返回 Bearer token；按账号 + IP 限流，超限 429
     @PostMapping("/login")
     @ApiOperation(value = "登录")
-    public Result login(@RequestBody LoginTo loginTo) {
-        return Result.success(authService.login(loginTo.getUsername(), loginTo.getPassword()));
+    public Result login(@RequestBody LoginTo loginTo, HttpServletRequest request) {
+        return Result.success(authService.login(loginTo.getUsername(), loginTo.getPassword(), ClientIpUtil.resolve(request)));
     }
 
     // 撤销当前 token

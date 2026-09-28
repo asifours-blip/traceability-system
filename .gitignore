@@ -42,3 +42,6 @@ back-me/src/main/resources/application-local.yml
 
 # 本地评审草稿，不入库
 review-result.txt
+
+# 备份演练产物（MySQL dump / kubo repo tar / 链上标识 json），本地留存，不入库
+/backups/

@@ -86,6 +86,16 @@ class RealChainBusinessFlowTest {
         }
         String url = kuboUrl;
         registry.add("ipfs.api-url", () -> url);
+
+        // 备份/恢复演练用：设置 E2E_MYSQL_URL 时连真实 MySQL（如恢复演练里全新的容器），
+        // 不设置则沿用上面 @SpringBootTest properties 里的 H2，行为与之前一致
+        String mysqlUrl = System.getenv("E2E_MYSQL_URL");
+        if (mysqlUrl != null && !mysqlUrl.isEmpty()) {
+            registry.add("spring.datasource.url", () -> mysqlUrl);
+            registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
+            registry.add("spring.datasource.username", () -> System.getenv().getOrDefault("E2E_MYSQL_USER", "root"));
+            registry.add("spring.datasource.password", () -> System.getenv().getOrDefault("E2E_MYSQL_PASSWORD", ""));
+        }
     }
 
     @org.junit.jupiter.api.AfterAll

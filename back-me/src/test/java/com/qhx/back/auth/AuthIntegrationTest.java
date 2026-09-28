@@ -6,14 +6,15 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.qhx.back.enums.UserRole;
+import com.qhx.back.mapper.FileObjectMapper;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.mapper.UserSessionMapper;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.model.UserSession;
 import com.qhx.back.service.AuthService;
 import com.qhx.back.support.FakeWeBaseFront;
+import com.qhx.back.support.TestFiles;
 import com.qhx.back.task.IotDataSimulatorTask;
-import io.ipfs.api.IPFS;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,8 +70,6 @@ class AuthIntegrationTest {
 
     private static FakeWeBaseFront fakeWeBase;
 
-    @MockBean
-    private IPFS ipfs;
     // 避免定时任务在测试里写 IoT 表
     @MockBean
     private IotDataSimulatorTask iotDataSimulatorTask;
@@ -79,6 +78,8 @@ class AuthIntegrationTest {
     private MockMvc mvc;
     @Autowired
     private UserAccountMapper userAccountMapper;
+    @Autowired
+    private FileObjectMapper fileObjectMapper;
     @Autowired
     private UserSessionMapper userSessionMapper;
     @Autowired
@@ -264,6 +265,7 @@ class AuthIntegrationTest {
         // 新用户登录后，业务交易用的是自己绑定的地址
         fakeWeBase.reset();
         String userToken = login(username, USER_PASSWORD);
+        TestFiles.seedUploaded(fileObjectMapper, authService.authenticate(userToken).getId(), "QmCid");
         perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(producerBody("")), userToken, 200);
         assertEquals(newAddress, fakeWeBase.requestsFor("newAgroFood").get(0).user);
     }
@@ -315,6 +317,10 @@ class AuthIntegrationTest {
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
         userAccountMapper.insert(user);
+        // 阶段交易引用的文件必须是本账号上传的：本测试不关心文件，直接放一条上传记录
+        if (role == UserRole.PRODUCER) {
+            TestFiles.seedUploaded(fileObjectMapper, user.getId(), "QmCid");
+        }
         return user;
     }
 

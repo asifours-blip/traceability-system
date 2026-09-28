@@ -2,41 +2,15 @@ package com.qhx.back.flow;
 
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
-import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qhx.back.enums.UserRole;
-import com.qhx.back.mapper.ChainTxMapper;
-import com.qhx.back.mapper.TraceAssignmentLogMapper;
-import com.qhx.back.mapper.UserAccountMapper;
-import com.qhx.back.model.ChainTx;
 import com.qhx.back.model.TraceAssignmentLog;
-import com.qhx.back.model.UserAccount;
-import com.qhx.back.service.AuthService;
-import com.qhx.back.service.IPFSService;
-import com.qhx.back.support.FakeWeBaseFront;
-import com.qhx.back.task.IotDataSimulatorTask;
-import io.ipfs.api.IPFS;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.Date;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.qhx.back.support.FakeWeBaseFront.json;
 import static com.qhx.back.support.FakeWeBaseFront.receiptTimeout;
@@ -46,10 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -58,70 +28,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * 业务闭环测试：生产 → 分销 → 零售 → 消费者扫码，外加归属、交接、校验、重复提交、更正、公开文件、建号幂等。
- * WeBASE-Front 用本地替身并打开合约模拟（阶段顺序、只写一次、读回结构与真实链一致）；IPFS 用 Mock。
+ * WeBASE-Front 用本地替身并打开合约模拟（阶段顺序、只写一次、读回结构与真实链一致）；IPFS 用 kubo 替身（文件真实上传、核对、绑定）。
  * 子类决定数据库：H2（CI）或真实 MySQL 容器（设置 MYSQL_IT_URL 时）。
  */
-@SpringBootTest(properties = {
-        "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
-        "auth.bootstrap-admin.username=admin",
-        "auth.bootstrap-admin.password=" + BusinessFlowTestBase.ADMIN_PASSWORD,
-        "auth.bootstrap-admin.address=" + BusinessFlowTestBase.ADMIN_ADDRESS,
-        "webase-front.read-timeout-ms=800",
-})
-@AutoConfigureMockMvc
-abstract class BusinessFlowTestBase {
-
-    static final String ADMIN_PASSWORD = "admin-test-password";
-    static final String ADMIN_ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    private static final String USER_PASSWORD = "user-test-password";
-    private static final AtomicInteger SEQ = new AtomicInteger(1);
-    // 真实 MySQL 上可能重复运行：用户名、地址、溯源号都带随机前缀，避免与上次运行冲突
-    private static final int RUN = ThreadLocalRandom.current().nextInt(0x10000, 0xfffff);
-    private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3};
-
-    static FakeWeBaseFront fake;
-
-    // IPFS 客户端在构造时就连守护进程，测试里整体替换；文件读写走 IPFSService 的 Mock
-    @MockBean
-    IPFS ipfs;
-    @MockBean
-    IPFSService ipfsService;
-    @MockBean
-    IotDataSimulatorTask iotDataSimulatorTask;
-
-    @Autowired
-    MockMvc mvc;
-    @Autowired
-    UserAccountMapper userAccountMapper;
-    @Autowired
-    ChainTxMapper chainTxMapper;
-    @Autowired
-    TraceAssignmentLogMapper assignmentLogMapper;
-    @Autowired
-    AuthService authService;
-
-    @DynamicPropertySource
-    static void webaseUrl(DynamicPropertyRegistry registry) throws IOException {
-        if (fake == null) {
-            fake = new FakeWeBaseFront();
-        }
-        registry.add("webase-front.url", fake::baseUrl);
-    }
-
-    @AfterAll
-    static void stopFake() {
-        if (fake != null) {
-            fake.close();
-            fake = null;
-        }
-    }
-
-    @BeforeEach
-    void resetFake() {
-        fake.simulateContract();
-        fake.reset();
-    }
+abstract class BusinessFlowTestBase extends FlowTestSupport {
 
     // ================================================================ 主流程
 
@@ -133,21 +43,23 @@ abstract class BusinessFlowTestBase {
         String tn = traceNumber();
 
         // 生产：指定分销商
+        byte[] certPng = png("main-cert-" + tn);
+        String cert = upload(p, "生产认证.png", certPng, 200).getJSONObject("data").getStr("cid");
         JSONObject prod = perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
-                .content(producerBody(tn, d.user.getUsername(), "2026-01-01")), p.token, 200);
+                .content(producerBody(tn, d.user.getUsername(), "2026-01-01", cert)), p.token, 200);
         assertEquals("CONFIRMED", prod.getJSONObject("data").getStr("state"));
         assertEquals(p.user.getChainAddress(), fake.requestsFor("newAgroFood").get(0).user);
 
         // 分销：被指定的分销商写入，并指定零售商
         perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "100", "100")), d.token, 200);
+                .content(distributorBody(tn, r.user.getUsername(), "100", "100", cert(d))), d.token, 200);
         // 零售：被指定的零售商写入
         perform(post("/retailer/add").contentType(MediaType.APPLICATION_JSON)
                 .content(retailerBody(tn, "30", "2026-02-01")), r.token, 200);
 
         // 三方各自的列表都能看到这个批次，状态均为已上链
         for (Party who : List.of(p, d, r)) {
-            JSONArray list = perform(get("/batches"), who.token, 200).getJSONArray("data");
+            JSONArray list = batches(who);
             JSONObject row = find(list, tn);
             assertNotNull(row, who.user.getUsername() + " 看不到自己的批次");
             for (String stage : List.of("PRODUCTION", "DISTRIBUTION", "RETAIL")) {
@@ -181,11 +93,12 @@ abstract class BusinessFlowTestBase {
         assertFalse(pubText.contains(p.user.getUsername()), "公开视图不应包含用户名");
         assertNotNull(pubData.getJSONArray("stages").getJSONObject(0).getStr("txHash"));
 
-        // 公开文件：CID 从链上该阶段读出
-        when(ipfsService.loadFile("QmCert" + RUN)).thenReturn(PNG);
+        // 公开文件：CID 从链上该阶段读出，且已在交易确认后绑定
         MvcResult file = mvc.perform(get("/trace/" + tn + "/file/production")).andExpect(status().isOk()).andReturn();
-        assertArrayEquals(PNG, file.getResponse().getContentAsByteArray());
+        assertArrayEquals(certPng, file.getResponse().getContentAsByteArray());
         assertEquals("image/png", file.getResponse().getContentType());
+        assertEquals("nosniff", file.getResponse().getHeader("X-Content-Type-Options"));
+        assertTrue(file.getResponse().getHeader("Content-Disposition").startsWith("inline;"));
 
         // 更正：生产阶段写入者追加一条，消费者页能看到公开字段的更正
         JSONObject corr = perform(post("/batches/" + tn + "/corrections").contentType(MediaType.APPLICATION_JSON)
@@ -211,7 +124,7 @@ abstract class BusinessFlowTestBase {
         String tn = produced(p, d);
 
         JSONObject body = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), other.token, 403);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(other))), other.token, 403);
         assertTrue(body.getStr("mes").contains("指定的分销商"), body.toString());
         assertTrue(fake.requestsFor("addTraceInfoByDistributor").isEmpty());
         perform(get("/batches/" + tn), other.token, 403);
@@ -239,8 +152,8 @@ abstract class BusinessFlowTestBase {
         Party d2 = party(UserRole.DISTRIBUTOR);
         String tn = produced(owner, d);
 
-        assertNull(find(perform(get("/batches"), intruder.token, 200).getJSONArray("data"), tn));
-        assertNotNull(find(perform(get("/batches"), owner.token, 200).getJSONArray("data"), tn));
+        assertNull(find(batches(intruder), tn));
+        assertNotNull(find(batches(owner), tn));
         perform(get("/batches/" + tn), intruder.token, 403);
         perform(put("/batches/" + tn + "/distributor").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"" + d2.user.getUsername() + "\"}"), intruder.token, 403);
@@ -250,7 +163,7 @@ abstract class BusinessFlowTestBase {
         // 用同一个溯源号抢建档：链上已存在 → 409，不发交易；链下批次仍归原生产商
         fake.reset();
         perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
-                .content(producerBody(tn, d2.user.getUsername(), "2026-01-01")), intruder.token, 409);
+                .content(producerBody(tn, d2.user.getUsername(), "2026-01-01", cert(intruder))), intruder.token, 409);
         assertTrue(fake.requestsFor("newAgroFood").isEmpty());
         assertEquals(d.user.getUsername(),
                 perform(get("/batches/" + tn), owner.token, 200).getJSONObject("data").getJSONObject("distributor").getStr("username"));
@@ -268,9 +181,9 @@ abstract class BusinessFlowTestBase {
                 .content("{\"username\":\"" + d2.user.getUsername() + "\",\"reason\":\"原分销商停运\"}"), p.token, 200);
         // 原分销商失去权限，新分销商可以写
         perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d1.token, 403);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d1))), d1.token, 403);
         perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d2.token, 200);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d2))), d2.token, 200);
         // 分销已上链：不能再改
         perform(put("/batches/" + tn + "/distributor").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"username\":\"" + d1.user.getUsername() + "\"}"), p.token, 409);
@@ -294,27 +207,27 @@ abstract class BusinessFlowTestBase {
 
         // 生产：溯源号格式、不存在的日期、分销商不存在
         JSONObject bad = perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
-                .content(producerBody("sy-lower", "nobody_" + RUN, "2026-02-30")), p.token, 400);
+                .content(producerBody("sy-lower", "nobody_" + RUN, "2026-02-30", cert(p))), p.token, 400);
         assertFields(bad, "traceNumber", "productTime", "distributorUsername");
         // 生产日期晚于今天
         JSONObject future = perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
-                .content(producerBody(traceNumber(), d.user.getUsername(), LocalDate.now().plusDays(3).toString())), p.token, 400);
+                .content(producerBody(traceNumber(), d.user.getUsername(), LocalDate.now().plusDays(3).toString(), cert(p))), p.token, 400);
         assertFields(future, "productTime");
         assertTrue(fake.requestsFor("newAgroFood").isEmpty());
 
         String tn = produced(p, d);
         // 分销：数量 0、价格带小数
         JSONObject badDist = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10.5", "0")), d.token, 400);
+                .content(distributorBody(tn, r.user.getUsername(), "10.5", "0", cert(d))), d.token, 400);
         assertFields(badDist, "distributePrice", "distributeQuantity");
         // 数量不是数字：请求体解析失败也要指出字段
         JSONObject notNumber = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "\"abc\"")), d.token, 400);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "\"abc\"", cert(d))), d.token, 400);
         assertFields(notNumber, "distributeQuantity");
         assertTrue(fake.requestsFor("addTraceInfoByDistributor").isEmpty());
 
         perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d.token, 200);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d))), d.token, 200);
         // 零售：数量超过分销数量、日期早于生产日期
         JSONObject badRetail = perform(post("/retailer/add").contentType(MediaType.APPLICATION_JSON)
                 .content(retailerBody(tn, "101", "2025-12-31")), r.token, 400);
@@ -337,13 +250,14 @@ abstract class BusinessFlowTestBase {
         String tn = produced(p, d);
 
         fake.on("addTraceInfoByDistributor", req -> receiptTimeout());
+        String report = cert(d);
         JSONObject first = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d.token, 202);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", report)), d.token, 202);
         Long txId = first.getJSONObject("data").getLong("id");
         assertEquals("UNKNOWN", chainTxMapper.selectById(txId).getState());
 
         JSONObject again = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d.token, 409);
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", report)), d.token, 409);
         assertEquals(txId, again.getJSONObject("data").getLong("id"));
         assertEquals(1, fake.requestsFor("addTraceInfoByDistributor").size());
 
@@ -410,24 +324,22 @@ abstract class BusinessFlowTestBase {
     // ================================================================ 公开文件
 
     @Test
-    void 未绑定的CID不能公开读取_绑定的按链上CID读取() throws Exception {
+    void 公开文件只能按链上阶段读取_不接受任意CID() throws Exception {
         Party p = party(UserRole.PRODUCER);
         Party d = party(UserRole.DISTRIBUTOR);
         String tn = produced(p, d);
-        when(ipfsService.loadFile(anyString())).thenReturn(PNG);
 
-        // 任意 CID 走原接口必须登录
+        // 按任意 CID 读文件的旧接口已删除：未登录 401，登录后 404
         mvc.perform(get("/fileBase64/QmUnbound" + RUN)).andExpect(status().isUnauthorized());
         mvc.perform(get("/file/QmUnbound" + RUN)).andExpect(status().isUnauthorized());
-        // 公开接口不接受 CID 参数，也不能借路径读未绑定阶段
+        mvc.perform(get("/file/QmUnbound" + RUN).header("Authorization", "Bearer " + p.token)).andExpect(status().isNotFound());
+        // 公开接口不接受 CID 参数，也不能借路径读未写入的阶段
         mvc.perform(get("/trace/" + tn + "/file/QmUnbound" + RUN)).andExpect(status().isBadRequest());
         mvc.perform(get("/trace/" + tn + "/file/retail")).andExpect(status().isBadRequest());
         mvc.perform(get("/trace/" + tn + "/file/distribution")).andExpect(status().isNotFound());
         mvc.perform(get("/trace/NOPE-" + RUN + "/file/production")).andExpect(status().isNotFound());
-        verify(ipfsService, never()).loadFile(anyString());
 
         mvc.perform(get("/trace/" + tn + "/file/production")).andExpect(status().isOk());
-        verify(ipfsService).loadFile("QmCert" + RUN);
     }
 
     // ================================================================ 建号幂等
@@ -473,125 +385,4 @@ abstract class BusinessFlowTestBase {
         login(username, USER_PASSWORD);
     }
 
-    // ================================================================ 工具
-
-    static final class Party {
-        final UserAccount user;
-        final String token;
-
-        Party(UserAccount user, String token) {
-            this.user = user;
-            this.token = token;
-        }
-    }
-
-    Party party(UserRole role) throws Exception {
-        int n = SEQ.incrementAndGet();
-        UserAccount user = new UserAccount();
-        user.setUsername("bf" + RUN + "_" + role.name().toLowerCase() + "_" + n);
-        user.setPasswordHash(authService.hashPassword(USER_PASSWORD));
-        user.setRole(role.name());
-        user.setChainAddress(String.format("0x%08x%032x", RUN, n));
-        user.setCompanyName(role.getDesc() + n);
-        user.setEnabled(true);
-        user.setCreatedAt(new Date());
-        user.setUpdatedAt(new Date());
-        userAccountMapper.insert(user);
-        return new Party(user, login(user.getUsername(), USER_PASSWORD));
-    }
-
-    String produced(Party p, Party d) throws Exception {
-        String tn = traceNumber();
-        perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON)
-                .content(producerBody(tn, d.user.getUsername(), "2026-01-01")), p.token, 200);
-        return tn;
-    }
-
-    String distributed(Party p, Party d, Party r) throws Exception {
-        String tn = produced(p, d);
-        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distributorBody(tn, r.user.getUsername(), "10", "100")), d.token, 200);
-        return tn;
-    }
-
-    static String traceNumber() {
-        return String.format("BF%X-%d", RUN, SEQ.incrementAndGet());
-    }
-
-    static String address() {
-        return String.format("0x%08x%032x", RUN + 1, SEQ.incrementAndGet());
-    }
-
-    static String producerBody(String tn, String distributor, String productTime) {
-        return "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"农场A\",\"productName\":\"苹果\","
-                + "\"productionLocation\":\"烟台\",\"variety\":\"红富士\",\"productionBatch\":\"B001\","
-                + "\"productionCert\":\"QmCert" + RUN + "\",\"productTime\":\"" + productTime + "\","
-                + "\"distributorUsername\":\"" + distributor + "\"}";
-    }
-
-    /** price / quantity 原样拼进 JSON，便于构造小数、字符串等非法值 */
-    static String distributorBody(String tn, String retailer, String price, String quantity) {
-        return "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"仓配B\",\"storageCondition\":\"冷藏\","
-                + "\"transportMethod\":\"冷链车\",\"distributeBatch\":\"D001\",\"storageLocation\":\"济南\","
-                + "\"distributePrice\":" + price + ",\"distributeQuantity\":" + quantity + ","
-                + "\"inspectionReport\":\"QmReport" + RUN + "\",\"retailerUsername\":\"" + retailer + "\"}";
-    }
-
-    static String retailerBody(String tn, String quantity, String saleTime) {
-        return "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"门店C\",\"salePrice\":20,\"saleQuantity\":" + quantity + ","
-                + "\"shelfLife\":7,\"invoiceNo\":\"INV-001\",\"saleTime\":\"" + saleTime + "\"}";
-    }
-
-    static String createUserBody(String username, String role, String address) {
-        return "{\"username\":\"" + username + "\",\"password\":\"" + USER_PASSWORD + "\",\"role\":\"" + role
-                + "\",\"chainAddress\":\"" + address + "\",\"companyName\":\"测试公司\"}";
-    }
-
-    static JSONObject find(JSONArray list, String tn) {
-        for (int i = 0; i < list.size(); i++) {
-            if (tn.equals(list.getJSONObject(i).getStr("traceNumber"))) {
-                return list.getJSONObject(i);
-            }
-        }
-        return null;
-    }
-
-    static void assertFields(JSONObject body, String... fields) {
-        assertEquals(400, body.getInt("code"), body.toString());
-        JSONArray errors = body.getJSONObject("data").getJSONArray("errors");
-        for (String f : fields) {
-            boolean found = false;
-            for (int i = 0; i < errors.size(); i++) {
-                found |= f.equals(errors.getJSONObject(i).getStr("field"));
-            }
-            assertTrue(found, "缺少字段错误 " + f + "：" + body);
-        }
-    }
-
-    String login(String username, String password) throws Exception {
-        return loginRaw(username, password, 200).getJSONObject("data").getStr("token");
-    }
-
-    JSONObject loginRaw(String username, String password, int expectedStatus) throws Exception {
-        String content = JSONUtil.createObj().set("username", username).set("password", password).toString();
-        MvcResult result = mvc.perform(post("/login").contentType(MediaType.APPLICATION_JSON).content(content))
-                .andExpect(status().is(expectedStatus)).andReturn();
-        return body(result);
-    }
-
-    JSONObject perform(MockHttpServletRequestBuilder builder, String token, int expectedStatus) throws Exception {
-        MvcResult result = mvc.perform(builder.header("Authorization", "Bearer " + token)).andReturn();
-        JSONObject body = body(result);
-        assertEquals(expectedStatus, result.getResponse().getStatus(), body.toString());
-        return body;
-    }
-
-    static JSONObject body(MvcResult result) throws Exception {
-        String s = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-        return s.isEmpty() ? new JSONObject() : JSONUtil.parseObj(s);
-    }
-
-    List<ChainTx> rows(String tn) {
-        return chainTxMapper.selectList(new LambdaQueryWrapper<ChainTx>().eq(ChainTx::getTraceNumber, tn));
-    }
 }

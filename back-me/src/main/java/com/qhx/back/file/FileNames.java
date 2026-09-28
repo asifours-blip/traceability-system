@@ -27,11 +27,16 @@ public final class FileNames {
         for (int i = 0; i < name.length(); ) {
             int cp = name.codePointAt(i);
             i += Character.charCount(cp);
+            // 制表符、换行等空白先折成空格，其余控制字符去掉
+            if (Character.isWhitespace(cp)) {
+                sb.append(' ');
+                continue;
+            }
             if (Character.isISOControl(cp) || "<>:\"/\\|?*;".indexOf(cp) >= 0
                     || Character.getType(cp) == Character.FORMAT || Character.getType(cp) == Character.PRIVATE_USE) {
                 continue;
             }
-            sb.appendCodePoint(Character.isWhitespace(cp) ? ' ' : cp);
+            sb.appendCodePoint(cp);
         }
         name = sb.toString().replaceAll(" {2,}", " ").trim();
         while (name.startsWith(".")) {

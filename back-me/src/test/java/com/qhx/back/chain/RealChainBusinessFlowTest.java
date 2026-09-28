@@ -3,9 +3,8 @@ package com.qhx.back.chain;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
-import com.qhx.back.service.IPFSService;
+import com.qhx.back.support.FakeKubo;
 import com.qhx.back.task.IotDataSimulatorTask;
-import io.ipfs.api.IPFS;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +12,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,26 +21,22 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * 完整后端（Spring 上下文 + H2 + 真实本地隔离链）跑业务闭环：
  * 管理员建号（链上已有角色则跳过交易 / 没有则真实发 addDistributor）→ 生产并指定分销商 → 非指定分销商被 403
  * → 指定分销商写分销并指定零售商 → 零售校验失败 400 → 零售上链 → 消费者公开视图 → 读回公开文件 → 追加更正。
- * IPFS 用内存替身（本地隔离链环境里没有 IPFS 守护进程）；文件 CID 仍按链上该阶段的字段读取。
+ * IPFS：设置了 E2E_IPFS_API_URL 时连真实 kubo（scripts/ipfs/），否则用 kubo 替身；文件经 /upload 真实上传、核对，交易确认后绑定。
  * 只有设置了 E2E_SMOKE_FILE 才运行；CI 的离线测试不设置，自动跳过。
  */
 @EnabledIfEnvironmentVariable(named = "E2E_SMOKE_FILE", matches = ".+")
@@ -59,12 +55,7 @@ class RealChainBusinessFlowTest {
 
     static final String PASSWORD = "real-chain-test-password";
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 'r', 'e', 'a', 'l'};
-    private static final Map<String, byte[]> FILES = new ConcurrentHashMap<>();
-
-    @MockBean
-    IPFS ipfs;
-    @MockBean
-    IPFSService ipfsService;
+    private static FakeKubo fakeKubo;
     @MockBean
     IotDataSimulatorTask iotDataSimulatorTask;
     @Autowired
@@ -83,19 +74,30 @@ class RealChainBusinessFlowTest {
         registry.add("contract.address", () -> smoke.getStr("contractAddress"));
         registry.add("contract.owner", () -> owner);
         registry.add("auth.bootstrap-admin.address", () -> owner);
+        String kuboUrl = System.getenv("E2E_IPFS_API_URL");
+        if (kuboUrl == null || kuboUrl.isEmpty()) {
+            try {
+                fakeKubo = new FakeKubo();
+            } catch (java.io.IOException e) {
+                throw new IllegalStateException(e);
+            }
+            kuboUrl = fakeKubo.apiUrl();
+        }
+        String url = kuboUrl;
+        registry.add("ipfs.api-url", () -> url);
+    }
+
+    @org.junit.jupiter.api.AfterAll
+    static void stopKubo() {
+        if (fakeKubo != null) {
+            fakeKubo.close();
+        }
     }
 
     @Test
     void 真实链_指定交接_三阶段_消费者查询_读回公开文件() throws Exception {
         JSONObject acc = smoke().getJSONObject("accounts");
         String run = String.valueOf(System.currentTimeMillis() % 100000000);
-        when(ipfsService.saveFileBase64(anyString())).thenAnswer(inv -> {
-            String cid = "QmReal" + run + FILES.size();
-            FILES.put(cid, Base64.getDecoder().decode((String) inv.getArgument(0)));
-            return cid;
-        });
-        when(ipfsService.loadFile(anyString())).thenAnswer(inv -> FILES.get((String) inv.getArgument(0)));
-
         String admin = login("admin");
         // 建号：smoke 已给 producer/distributor/retailer 授过角色 → 跳过授权交易
         for (String[] u : new String[][]{{"p" + run, "PRODUCER", "producer"}, {"d" + run, "DISTRIBUTOR", "distributor"}, {"r" + run, "RETAILER", "retailer"}}) {
@@ -116,8 +118,8 @@ class RealChainBusinessFlowTest {
         String o = login("o" + run);
         String tn = "RC" + run;
 
-        String cert = perform(post("/uploadBase64").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"file\":\"" + Base64.getEncoder().encodeToString(PNG) + "\"}"), p, 200).getJSONObject("data").getStr("hash");
+        byte[] certPng = png("cert-" + run);
+        String cert = upload(p, certPng);
         JSONObject prod = perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(
                 "{\"traceNumber\":\"" + tn + "\",\"companyName\":\"烟台果园\",\"productName\":\"苹果\",\"productionLocation\":\"山东烟台\","
                         + "\"variety\":\"红富士\",\"productionBatch\":\"B-" + run + "\",\"productionCert\":\"" + cert + "\","
@@ -126,11 +128,11 @@ class RealChainBusinessFlowTest {
 
         // outsider 在链上已是分销商，合约会接受它的写入；是后端的交接规则拒绝了它
         JSONObject denied = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distBody(tn, "r" + run, cert)), o, 403);
+                .content(distBody(tn, "r" + run, upload(o, png("outsider-" + run)))), o, 403);
         log("非指定分销商写分销 → 403：" + denied.getStr("mes"));
 
         JSONObject dist = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
-                .content(distBody(tn, "r" + run, cert)), d, 200).getJSONObject("data");
+                .content(distBody(tn, "r" + run, upload(d, png("report-" + run)))), d, 200).getJSONObject("data");
         logTx("分销", dist);
 
         JSONObject bad = perform(post("/retailer/add").contentType(MediaType.APPLICATION_JSON)
@@ -166,11 +168,26 @@ class RealChainBusinessFlowTest {
 
         MvcResult file = mvc.perform(get("/trace/" + tn + "/file/production")).andReturn();
         assertEquals(200, file.getResponse().getStatus());
-        assertArrayEquals(PNG, file.getResponse().getContentAsByteArray());
+        assertArrayEquals(certPng, file.getResponse().getContentAsByteArray());
         log("读回公开文件 production：" + file.getResponse().getContentType() + " " + file.getResponse().getContentAsByteArray().length + " 字节（CID 由链上 getAgroFoodInfo 读出）");
         assertEquals(401, mvc.perform(get("/fileBase64/" + cert)).andReturn().getResponse().getStatus());
         assertEquals(400, mvc.perform(get("/trace/" + tn + "/file/retail")).andReturn().getResponse().getStatus());
         log("按 CID 直接读取（未登录）→ 401；零售阶段无文件 → 400");
+    }
+
+    private String upload(String token, byte[] content) throws Exception {
+        JSONObject data = perform(multipart("/upload").file(new MockMultipartFile("file", "cert.png", "image/png", content)), token, 200)
+                .getJSONObject("data");
+        log("上传 " + content.length + " 字节 → cid=" + data.getStr("cid") + " sha256=" + data.getStr("sha256"));
+        return data.getStr("cid");
+    }
+
+    private static byte[] png(String tag) {
+        byte[] body = tag.getBytes(StandardCharsets.UTF_8);
+        byte[] b = new byte[PNG.length + body.length];
+        System.arraycopy(PNG, 0, b, 0, PNG.length);
+        System.arraycopy(body, 0, b, PNG.length, body.length);
+        return b;
     }
 
     private static String userBody(String username, String role, String address) {

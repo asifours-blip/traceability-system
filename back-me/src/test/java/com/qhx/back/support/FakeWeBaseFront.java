@@ -109,6 +109,26 @@ public class FakeWeBaseFront implements AutoCloseable {
         sim = new ContractSim();
     }
 
+    /**
+     * 把一笔写交易直接应用到合约模拟（不经过后端、不记请求），返回是否写入成功。
+     * 用来构造「本系统上线前直接写在链上的旧批次」，或配合自定义响应模拟「交易其实上链了但回执超时」。
+     */
+    public boolean applyToContract(String user, String funcName, Object... params) {
+        JSONArray arr = new JSONArray();
+        for (Object p : params) {
+            arr.add(String.valueOf(p));
+        }
+        return applyToContract(new Request(user, funcName, arr));
+    }
+
+    public boolean applyToContract(Request request) {
+        ContractSim contract = sim;
+        if (contract == null) {
+            throw new IllegalStateException("未打开合约模拟");
+        }
+        return contract.apply(request);
+    }
+
     /** 清掉请求记录与自定义响应；合约模拟的链上状态保留 */
     public void reset() {
         requests.clear();
@@ -298,7 +318,35 @@ public class FakeWeBaseFront implements AutoCloseable {
             int stage;
         }
 
-        private final Map<String, Item> items = new ConcurrentHashMap<>();
+        // 与链上 agroFoodList 一样保持写入顺序
+        private final Map<String, Item> items = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
+
+        /** 只做状态变更，成功返回 true */
+        synchronized boolean apply(Request request) {
+            String func = request.funcName;
+            List<String> params = request.params == null ? new ArrayList<>() : request.params.toList(String.class);
+            String tn = params.isEmpty() ? "" : params.get(0);
+            for (int i = 0; i < 3; i++) {
+                if (WRITES[i].equals(func)) {
+                    Item item = items.get(tn);
+                    boolean ok = (i == 0 && item == null) || (i == 1 && item != null && item.stage == 1)
+                            || (i == 2 && item != null && item.stage == 2);
+                    if (!ok) {
+                        return false;
+                    }
+                    if (item == null) {
+                        item = new Item();
+                        items.put(tn, item);
+                    }
+                    item.actors[i] = request.user;
+                    item.data.set(i, new ArrayList<>(params.subList(1, params.size())));
+                    item.timestamps[i] = System.currentTimeMillis();
+                    item.stage = i + 1;
+                    return true;
+                }
+            }
+            throw new IllegalArgumentException("不是写函数：" + func);
+        }
 
         synchronized Reply handle(FakeWeBaseFront fake, Request request) {
             String func = request.funcName;
@@ -358,8 +406,17 @@ public class FakeWeBaseFront implements AutoCloseable {
                 return callResult((Object[]) item.actors);
             }
             if ("getAgroFoodList".equals(func)) {
+                // 实测 WeBASE-Front v1.5.5 对 string[] 的返回：单元素数组，元素是「JSON 数组的字符串」，形如 ["[ \"A\", \"B\" ]"]，空列表 ["[ ]"]
+                // （docs/artifacts/webase-string-array-2026-09-28.json）
+                List<String> quoted = new ArrayList<>();
+                synchronized (items) {
+                    for (String tn2 : items.keySet()) {
+                        quoted.add(JSONUtil.quote(tn2, true));
+                    }
+                }
+                String inner = quoted.isEmpty() ? "[ ]" : "[ " + String.join(", ", quoted) + " ]";
                 JSONArray list = new JSONArray();
-                list.add(new JSONArray(items.keySet()));
+                list.add(inner);
                 return json(200, list.toString());
             }
             return null;

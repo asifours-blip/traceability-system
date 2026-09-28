@@ -6,16 +6,17 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qhx.back.enums.UserRole;
 import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.mapper.TraceBatchMapper;
+import com.qhx.back.mapper.FileObjectMapper;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.model.ChainTx;
 import com.qhx.back.model.TraceBatch;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.service.AuthService;
 import com.qhx.back.support.FakeWeBaseFront;
+import com.qhx.back.support.TestFiles;
 import com.qhx.back.support.RawHttpStub;
 import com.qhx.back.util.HttpUtil;
 import com.qhx.back.task.IotDataSimulatorTask;
-import io.ipfs.api.IPFS;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,14 +87,14 @@ class ChainTxLifecycleIntegrationTest {
     private static FakeWeBaseFront fake;
 
     @MockBean
-    private IPFS ipfs;
-    @MockBean
     private IotDataSimulatorTask iotDataSimulatorTask;
 
     @Autowired
     private MockMvc mvc;
     @Autowired
     private UserAccountMapper userAccountMapper;
+    @Autowired
+    private FileObjectMapper fileObjectMapper;
     @Autowired
     private ChainTxMapper chainTxMapper;
     @Autowired
@@ -346,7 +347,8 @@ class ChainTxLifecycleIntegrationTest {
         assertEquals(42L, row.getBlockNumber());
         assertNull(row.getInflightKey());
         assertEquals(List.of(hash), fake.receiptQueries());
-        assertTrue(fake.requestsFor("getStageActors").isEmpty());
+        // 查证本身按回执下结论、不读链；唯一一次 getStageActors 来自确认之后的读模型刷新
+        assertEquals(1, fake.requestsFor("getStageActors").size());
     }
 
     @Test
@@ -559,6 +561,13 @@ class ChainTxLifecycleIntegrationTest {
         user.setCreatedAt(new Date());
         user.setUpdatedAt(new Date());
         userAccountMapper.insert(user);
+        // 阶段交易引用的文件必须是本账号上传的：本测试不关心文件，直接放一条上传记录
+        if (role == UserRole.PRODUCER) {
+            TestFiles.seedUploaded(fileObjectMapper, user.getId(), "QmCid");
+        }
+        if (role == UserRole.DISTRIBUTOR) {
+            TestFiles.seedUploaded(fileObjectMapper, user.getId(), "QmR");
+        }
         return user;
     }
 

@@ -1,0 +1,23 @@
+# 同一次运行前先执行了 start.sh 与 smoke.sh --skip-stall（冒烟输出写到 WSL 临时目录，未覆盖上一阶段已提交的 local-chain-smoke-2026-09-28.*）；IPFS 为内存替身，CID 从链上读取
+# RealChainSmokeTest RealChainBusinessFlowTest 2026-09-28 11:06:15 +0800：后端代码直连本地隔离链
+# JDK: openjdk version "21.0.12.1" 2026-08-18 LTS；合约地址: 0x5f14a033105a4070f17113c067ccdb3d4287b686
+[real-chain] newAgroFood CONFIRMED(hash=0x791a43eb9075d4db6a3b338e4274cae5b0832a90ba23e0bf63a254d43ffe5c0b, block=41, status=0x0, code=null, reason=null)
+[real-chain] duplicate newAgroFood REVERTED(hash=0x136f6cecaa2ea33b62f3a751405e9826699efc633896e9a382479c7141333615, block=42, status=0x16, code=null, reason=Trace: traceNumber already exists)
+[real-chain] unknown signer REJECTED(hash=null, block=null, status=null, code=201015, reason=user's privateKey is null)
+[real-chain-flow] 建号 p64799551 PRODUCER roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 d64799551 DISTRIBUTOR roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 r64799551 RETAILER roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 o64799551 DISTRIBUTOR roleState=GRANTED_BY_TX txId=1
+[real-chain-flow] 生产上链 CONFIRMED hash=0x9b59c648e89da8c509ab42cf956e633f71609e4e6d94c155fdded9a991141b5c block=47 signer=0x07ba9b1abc95ce6e4ea38bf8fdd7f1b6d5b0f6e8
+[real-chain-flow] 非指定分销商写分销 → 403：只有该批次指定的分销商可以录入分销信息
+[real-chain-flow] 分销上链 CONFIRMED hash=0x6fd57aefcf8ee390c5d6ecb920f6d7ba9486297895b7180c807fe99be84ca473 block=48 signer=0x347c8ae644fd477e5d7e15e5e99efa7499b04e5f
+[real-chain-flow] 零售数量超过分销数量、日期早于生产 → 400：[{"field":"saleQuantity","message":"不能超过分销数量（500）"},{"field":"saleTime","message":"不能早于生产日期（2026-09-20）"}]
+[real-chain-flow] 零售上链 CONFIRMED hash=0xfaf6390a2025d51a9ffd192bac38f90d6b2c927273f4c41a66469b098e8aef1e block=49 signer=0x94d938fc6204db5f830b46ccb364ff0b4464fa04
+[real-chain-flow] 零售写入者追加更正 #1
+[real-chain-flow] 非写入者更正 → 403
+[real-chain-flow] 消费者公开视图字段：producer=[companyName, productName, productionLocation, variety, productionBatch, productTime, timestamp, hasFile] distributor=[companyName, storageCondition, transportMethod, timestamp, hasFile] retailer=[companyName, shelfLife, saleTime, timestamp, hasFile]
+[real-chain-flow] 消费者视图零售更正：[{"id":1,"stage":"RETAIL","fields":[{"field":"shelfLife","label":"保质期（天）","value":"12"}],"reason":"保质期复核","authorCompany":"RETAILER-r64799551","createdAt":"2026-09-28T03:06:41.624+00:00"}]
+[real-chain-flow] 读回公开文件 production：image/png 12 字节（CID 由链上 getAgroFoodInfo 读出）
+[real-chain-flow] 按 CID 直接读取（未登录）→ 401；零售阶段无文件 → 400
+RealChainSmokeTest: tests="1" errors="0" skipped="0" failures="0" 
+RealChainBusinessFlowTest: tests="1" errors="0" skipped="0" failures="0" 

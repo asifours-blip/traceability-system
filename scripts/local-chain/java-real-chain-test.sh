@@ -36,15 +36,18 @@ out="$REPO_ROOT/docs/artifacts/local-chain-java-test-$(date +%F-%H%M%S).txt"
 {
   echo "# $tests $(date '+%F %T %z')：后端代码直连本地隔离链"
   echo "# JDK: $("$JDK21_HOME/bin/java" -version 2>&1 | head -1)；合约地址: $(python3 -c "import json;print(json.load(open('$E2E_HOME/last-smoke.json'))['contractAddress'])")"
-  JAVA_HOME="$JDK21_HOME" E2E_SMOKE_FILE="$E2E_HOME/last-smoke.json"     "$MAVEN_HOME_E2E/bin/mvn" -B -q -Dmaven.repo.local="$E2E_HOME/m2" -Dtest="${tests// /,}" -Dsurefire.failIfNoSpecifiedTests=false test     | grep -E '^\[real-chain(-flow)?\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
+  # MyBatis 的 SQL 日志里有 ERROR_REASON 列名，用 grep -v 去掉
+  JAVA_HOME="$JDK21_HOME" E2E_SMOKE_FILE="$E2E_HOME/last-smoke.json" \
+    "$MAVEN_HOME_E2E/bin/mvn" -B -q -Dmaven.repo.local="$E2E_HOME/m2" -Dtest="${tests// /,}" -Dsurefire.failIfNoSpecifiedTests=false test \
+    | grep -E '^\[real-chain(-flow)?\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
   for t in $tests; do
     report="target/surefire-reports/TEST-com.qhx.back.chain.$t.xml"
-    [[ -f "$report" ]] && echo "$t: $(grep -o 'tests="[0-9]*"\|failures="[0-9]*"\|errors="[0-9]*"\|skipped="[0-9]*"' "$report" | head -4 | tr '
-' ' ')"
+    [[ -f "$report" ]] && echo "$t: $(grep -o 'tests="[0-9]*"\|failures="[0-9]*"\|errors="[0-9]*"\|skipped="[0-9]*"' "$report" | head -4 | tr '\n' ' ')"
   done
 } | tee "$out"
 for t in $tests; do
   report="target/surefire-reports/TEST-com.qhx.back.chain.$t.xml"
-  [[ -f "$report" ]] && grep -q 'failures="0"' "$report" && grep -q 'errors="0"' "$report" && grep -q 'skipped="0"' "$report"     || die "$t 未通过（见 $out）"
+  [[ -f "$report" ]] && grep -q 'failures="0"' "$report" && grep -q 'errors="0"' "$report" && grep -q 'skipped="0"' "$report" \
+    || die "$t 未通过（见 $out）"
 done
 log "$tests 在真实链上通过，记录：$out"

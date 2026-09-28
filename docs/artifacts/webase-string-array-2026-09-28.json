@@ -1,0 +1,26 @@
+{
+  "frontUrl": "http://127.0.0.1:5102/WeBASE-Front",
+  "webaseFront": "v1.5.5",
+  "contract": "0x38203e00b91870af77eff76de3ff283e7d281b72",
+  "steps": [
+    {
+      "step": "空列表",
+      "httpStatus": 200,
+      "raw": "[\"[ ]\"]"
+    },
+    {
+      "step": "写入 \"LIST-115239\" 后",
+      "httpStatus": 200,
+      "raw": "[\"[ \\\"LIST-115239\\\" ]\"]"
+    },
+    {
+      "step": "写入 \"LIST-q\\\"x, ]y\\\\z 中\" 后",
+      "httpStatus": 200,
+      "raw": "[\"[ \\\"LIST-115239\\\", \\\"LIST-q\\\\\\\"x, ]y\\\\\\\\z 中\\\" ]\"]"
+    }
+  ],
+  "parsed": [
+    "LIST-115239",
+    "LIST-q\"x, ]y\\z 中"
+  ]
+}

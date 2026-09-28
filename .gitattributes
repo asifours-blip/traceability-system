@@ -1,3 +1,4 @@
 # 在 WSL 里执行的脚本必须保持 LF，否则 bash 会因 \r 报错
 *.sh text eol=lf
 scripts/local-chain/*.py text eol=lf
+scripts/ipfs/*.py text eol=lf

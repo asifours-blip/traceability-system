@@ -14,11 +14,11 @@ contract:
 webase-front:
   url: 'http://你的WeBASE-Front地址:5002/WeBASE-Front'
 
+# 本地 kubo 节点（scripts/ipfs/setup.sh + start.sh，默认 API 端口 5201）
 ipfs:
-  host: '127.0.0.1'
-  port: 5001
+  api-url: 'http://127.0.0.1:5201'
 
-# 账号体系：先执行 src/main/resources/db/auth-schema.sql 建表
+# 账号体系：先执行 src/main/resources/db/auth-schema.sql 建表（再依次执行 chain-tx-schema.sql、business-schema.sql）
 # 首次启动管理员通过环境变量注入，不要把初始密码写进本文件：
 #   ADMIN_INITIAL_PASSWORD  必填（至少 8 位），缺失则不创建管理员并打 ERROR 日志
 #   ADMIN_USERNAME          可选，默认 admin

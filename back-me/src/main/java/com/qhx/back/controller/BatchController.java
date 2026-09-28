@@ -6,6 +6,7 @@ import com.qhx.back.enums.UserRole;
 import com.qhx.back.model.Result;
 import com.qhx.back.model.to.AssignTo;
 import com.qhx.back.model.to.CorrectionTo;
+import com.qhx.back.model.vo.PageQuery;
 import com.qhx.back.service.BatchService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -28,11 +29,13 @@ public class BatchController {
     @Autowired
     private BatchService batchService;
 
-    // 当前账号名下的批次：生产商看自己建档的，分销商/零售商看指定给自己的，管理员看全部
+    // 当前账号名下的批次（分页）：生产商看自己建档的，分销商/零售商看指定给自己的，管理员看全部；todo=true 只看轮到我录入的
     @GetMapping("/batches")
     @ApiOperation(value = "我的批次")
-    public Result list() {
-        return Result.success(batchService.list());
+    public Result list(@RequestParam(required = false) Integer page, @RequestParam(required = false) Integer size,
+                       @RequestParam(required = false, defaultValue = "false") boolean todo,
+                       @RequestParam(required = false) String keyword) {
+        return Result.success(batchService.list(PageQuery.of(page, size), todo, keyword));
     }
 
     // 批次详情：链上数据、各阶段交易状态、交接历史、更正

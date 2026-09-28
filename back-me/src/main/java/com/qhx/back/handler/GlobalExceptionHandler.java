@@ -7,6 +7,7 @@ import com.qhx.back.exception.BusinessException;
 import com.qhx.back.exception.ChainTxException;
 import com.qhx.back.exception.ValidationException;
 import com.qhx.back.exception.WeBaseFrontException;
+import com.qhx.back.file.FileRejectedException;
 import com.qhx.back.model.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+
+import java.util.Collections;
 import java.util.stream.Collectors;
 @ControllerAdvice
 @ResponseBody
@@ -55,6 +60,31 @@ public class GlobalExceptionHandler
     {
         return ResponseEntity.status(exception.getStatus())
                 .body(new Result(exception.getData(), exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 上传被拒：HTTP 状态码与 body.code 一致，data.errorCode 为机器可读的错误码
+    @ExceptionHandler(FileRejectedException.class)
+    public ResponseEntity<Result> handlerFileRejected(FileRejectedException exception)
+    {
+        log.warn("upload rejected: {} {}", exception.getErrorCode(), exception.getMessage());
+        return ResponseEntity.status(exception.getStatus()).body(new Result(
+                Collections.singletonMap("errorCode", exception.getErrorCode()), exception.getMessage(), exception.getStatus()));
+    }
+
+
+    // 超过 spring.servlet.multipart 的上限：容器在解析请求时就已拒绝，文件没有进入业务代码
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Result> handlerMaxUpload(MaxUploadSizeExceededException exception)
+    {
+        return handlerFileRejected(new FileRejectedException(413, "FILE_TOO_LARGE", "文件超过大小上限"));
+    }
+
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<Result> handlerMissingPart(MissingServletRequestPartException exception)
+    {
+        return handlerFileRejected(new FileRejectedException(400, "FILE_EMPTY", "缺少文件（表单字段 file）"));
     }
 
 

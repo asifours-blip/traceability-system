@@ -3,8 +3,8 @@ server:
   port: 8010
 
 allow:
-  # 免登录路径（Ant 风格，精确匹配）：消费者扫码详情（仅公开字段）、已绑定到溯源号的公开文件、系统信息；其余接口都要 Bearer token
-  paths: /login,/getSystemInfo,/trace/detail/*,/trace/*/file/*
+  # 免登录路径（Ant 风格，精确匹配）：消费者扫码详情与查询（仅公开字段）、已绑定到溯源号的公开文件、系统信息；其余接口都要 Bearer token
+  paths: /login,/getSystemInfo,/trace/detail/*,/trace/search,/trace/*/file/*
 
 # 账号体系：登录 token 有效期；首次启动若没有 ADMIN，则按下列配置创建管理员
 # 初始密码只从环境变量 ADMIN_INITIAL_PASSWORD 读取，仓库不内置默认密码，缺失则跳过并打 ERROR 日志
@@ -20,8 +20,11 @@ spring:
     active: local   # 本地真实配置在 application-local.yml（已 gitignore，请自行创建）
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      # 容器层上限略大于业务上限 file.max-bytes，超出的在解析请求时直接拒绝（413）；业务上限由 UploadPipeline 流式计数判定
+      max-file-size: 11MB
+      max-request-size: 12MB
+      # 0：上传内容一律先写临时文件，不在内存里缓存整个文件
+      file-size-threshold: 0
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
@@ -50,6 +53,18 @@ webase-front:
   # 必须大于 WeBASE-Front 的 constant.transMaxWait（默认 30 秒）；超时后交易记为 UNKNOWN，不自动重发
   read-timeout-ms: ${WEBASE_READ_TIMEOUT_MS:40000}
 
+# 本地 kubo 节点的 HTTP RPC（scripts/ipfs/ 启停，离线模式、只监听回环）；启动时不连接
 ipfs:
-  host: '127.0.0.1'
-  port: 5001
+  api-url: ${IPFS_API_URL:http://127.0.0.1:5201}
+  connect-timeout-ms: ${IPFS_CONNECT_TIMEOUT_MS:3000}
+  read-timeout-ms: ${IPFS_READ_TIMEOUT_MS:30000}
+
+# 文件规则与清理策略，见 docs/files.md
+file:
+  # 单个文件上限（字节），默认 10 MB
+  max-bytes: ${FILE_MAX_BYTES:10485760}
+  orphan:
+    # UPLOADED 超过这么久仍未被确认的交易引用 → ORPHANED 并取消 pin
+    ttl-hours: ${FILE_ORPHAN_TTL_HOURS:24}
+    cleanup-enabled: ${FILE_ORPHAN_CLEANUP_ENABLED:true}
+    cleanup-interval-ms: ${FILE_ORPHAN_CLEANUP_INTERVAL_MS:3600000}

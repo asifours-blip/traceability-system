@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.qhx.back.chain.ChainErrors;
 import com.qhx.back.chain.ChainTxState;
 import com.qhx.back.chain.ParamsDigest;
+import com.qhx.back.chain.StageConfirmedListener;
 import com.qhx.back.chain.StageProbe;
 import com.qhx.back.chain.TraceStage;
 import com.qhx.back.chain.TxOutcome;
@@ -42,6 +43,9 @@ public class ChainTxServiceImpl implements ChainTxService
     private ChainTxMapper chainTxMapper;
     @Autowired
     private WeBaseClient weBaseClient;
+    // 阶段交易确认后的链下处理（刷新读模型、绑定文件）；没有实现时为空
+    @Autowired(required = false)
+    private List<StageConfirmedListener> confirmedListeners;
 
     @Override
     public ChainTx submit(String funcName, List<Object> params)
@@ -125,6 +129,7 @@ public class ChainTxServiceImpl implements ChainTxService
         // 3. 按结果更新
         ChainTx saved = applyOutcome(tx.getId(), outcome, null);
         if (outcome.getKind() == TxOutcome.Kind.CONFIRMED) {
+            notifyConfirmed(saved);
             return saved;
         }
         ChainErrors.Mapped mapped = ChainErrors.of(outcome);
@@ -167,8 +172,9 @@ public class ChainTxServiceImpl implements ChainTxService
         if (tx.getTxHash() != null) {
             TxOutcome receipt = weBaseClient.queryReceipt(tx.getTxHash());
             if (receipt.getKind() == TxOutcome.Kind.CONFIRMED) {
-                return new ChainTxVerifyVO("RECEIPT_CONFIRMED", "按交易哈希查到成功回执",
-                        applyOutcome(id, receipt, "RECEIPT_CONFIRMED"));
+                ChainTx done = applyOutcome(id, receipt, "RECEIPT_CONFIRMED");
+                notifyConfirmed(done);
+                return new ChainTxVerifyVO("RECEIPT_CONFIRMED", "按交易哈希查到成功回执", done);
             }
             if (receipt.getKind() == TxOutcome.Kind.REVERTED) {
                 return new ChainTxVerifyVO("RECEIPT_FAILED", ChainErrors.of(receipt).message,
@@ -198,6 +204,7 @@ public class ChainTxServiceImpl implements ChainTxService
                     return new ChainTxVerifyVO("CONFLICT", note, finish(id, ChainTxState.FAILED, note, "CONFLICT"));
                 }
                 ChainTx done = finish(id, ChainTxState.CONFIRMED, null, "STATE_CONFIRMED");
+                notifyConfirmed(done);
                 return new ChainTxVerifyVO("STATE_CONFIRMED", probe.note + "；没有拿到回执，交易哈希与块高未知", done);
             }
             case CONFLICT:
@@ -215,6 +222,23 @@ public class ChainTxServiceImpl implements ChainTxService
                         .eq(ChainTx::getId, id));
                 return new ChainTxVerifyVO("NOT_WRITTEN", probe.note + "；可以重新提交。原交易若之后才上链，"
                         + "重新提交会被合约拒绝而不会重复写入，届时可再次查证本记录", chainTxMapper.selectById(id));
+            }
+        }
+    }
+
+    /** 只对状态确为 CONFIRMED 的阶段交易回调；回调失败只记日志 */
+    private void notifyConfirmed(ChainTx tx)
+    {
+        if (confirmedListeners == null || tx == null || tx.getStage() == null
+                || !ChainTxState.CONFIRMED.name().equals(tx.getState())) {
+            return;
+        }
+        for (StageConfirmedListener listener : confirmedListeners) {
+            try {
+                listener.onStageConfirmed(tx);
+            } catch (RuntimeException e) {
+                log.error("交易 #{} 已确认，但链下后续处理 {} 失败（可由管理员重建读模型补齐）", tx.getId(),
+                        listener.getClass().getSimpleName(), e);
             }
         }
     }

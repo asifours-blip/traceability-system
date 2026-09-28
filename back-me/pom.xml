@@ -47,42 +47,7 @@
 			<artifactId>h2</artifactId>
 			<scope>test</scope>
 		</dependency>
-		<!-- 本地 jars，CI/命令行编译需要显式声明；不连 IPFS 守护进程 -->
-		<dependency>
-			<groupId>io.ipfs</groupId>
-			<artifactId>java-ipfs-http-client</artifactId>
-			<version>local</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/ipfs.jar</systemPath>
-		</dependency>
-		<dependency>
-			<groupId>io.ipfs</groupId>
-			<artifactId>multihash</artifactId>
-			<version>local</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/multihash.jar</systemPath>
-		</dependency>
-		<dependency>
-			<groupId>io.ipfs</groupId>
-			<artifactId>multibase</artifactId>
-			<version>local</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/multibase.jar</systemPath>
-		</dependency>
-		<dependency>
-			<groupId>io.ipfs</groupId>
-			<artifactId>multiaddr</artifactId>
-			<version>local</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/multiaddr.jar</systemPath>
-		</dependency>
-		<dependency>
-			<groupId>io.ipfs</groupId>
-			<artifactId>cid</artifactId>
-			<version>local</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/cid.jar</systemPath>
-		</dependency>
+		<!-- IPFS：用 JDK HttpURLConnection 直连 kubo HTTP RPC（com.qhx.back.file.KuboClient），不再依赖 libs/ 下来源不明的 jar -->
 		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
 			<artifactId>httpclient</artifactId>

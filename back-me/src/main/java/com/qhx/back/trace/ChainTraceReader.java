@@ -2,6 +2,7 @@ package com.qhx.back.trace;
 
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONUtil;
 import com.qhx.back.chain.TraceStage;
 import com.qhx.back.client.WeBaseClient;
 import com.qhx.back.exception.BusinessException;
@@ -38,6 +39,33 @@ public class ChainTraceReader {
             throw new BusinessException(502, "无法解析链上 getStageActors 的返回：" + StrUtil.maxLength(String.valueOf(result), 200));
         }
         return result.toList(String.class);
+    }
+
+    /**
+     * getAgroFoodList：链上全部溯源号，按写入顺序。
+     * 实测 WeBASE-Front v1.5.5 对 string[] 返回值的响应是单元素数组，元素是「JSON 数组的字符串」：
+     * ["[ \"A\", \"B\" ]"]，空列表为 ["[ ]"]；引号、反斜杠按 JSON 转义（docs/artifacts/webase-string-array-2026-09-28.json）。
+     */
+    public List<String> list() {
+        JSONArray result;
+        try {
+            result = client.call("getAgroFoodList", Collections.emptyList());
+        } catch (WeBaseFrontException e) {
+            throw new BusinessException(503, "读取链上数据失败，请稍后重试（" + e.mes + "）");
+        }
+        if (result == null || result.size() != 1) {
+            throw new BusinessException(502, "无法解析链上 getAgroFoodList 的返回：" + StrUtil.maxLength(String.valueOf(result), 200));
+        }
+        Object only = result.get(0);
+        if (only instanceof String && ((String) only).startsWith(CALL_ERROR)) {
+            throw new BusinessException(502, "链上只读调用失败：" + only);
+        }
+        try {
+            JSONArray inner = only instanceof JSONArray ? (JSONArray) only : JSONUtil.parseArray((String) only);
+            return inner.toList(String.class);
+        } catch (RuntimeException e) {
+            throw new BusinessException(502, "无法解析链上 getAgroFoodList 的返回：" + StrUtil.maxLength(String.valueOf(only), 200));
+        }
     }
 
     /** 某阶段在链上的写入者；未写入或溯源号不存在返回 null */

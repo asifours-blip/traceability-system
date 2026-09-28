@@ -16,20 +16,26 @@ import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.mapper.TraceAssignmentLogMapper;
 import com.qhx.back.mapper.TraceBatchMapper;
 import com.qhx.back.mapper.TraceCorrectionMapper;
+import com.qhx.back.mapper.TraceReadModelMapper;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.model.ChainTx;
 import com.qhx.back.model.TraceAssignmentLog;
 import com.qhx.back.model.TraceBatch;
 import com.qhx.back.model.TraceCorrection;
+import com.qhx.back.model.TraceReadModel;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.model.to.AssignTo;
 import com.qhx.back.model.to.CorrectionTo;
 import com.qhx.back.model.to.DistributorTo;
 import com.qhx.back.model.to.ProducerTo;
 import com.qhx.back.model.to.RetailerTo;
+import com.qhx.back.model.vo.BatchListRow;
+import com.qhx.back.model.vo.PageQuery;
+import com.qhx.back.model.vo.PageResult;
 import com.qhx.back.service.BatchService;
 import com.qhx.back.service.ChainTxService;
-import com.qhx.back.service.IPFSService;
+import com.qhx.back.service.FileService;
+import com.qhx.back.service.ReadModelService;
 import com.qhx.back.trace.ChainTraceReader;
 import com.qhx.back.trace.TraceFields;
 import com.qhx.back.trace.TraceValidator;
@@ -91,7 +97,11 @@ public class BatchServiceImpl implements BatchService
     @Autowired
     private WeBaseClient weBaseClient;
     @Autowired
-    private IPFSService ipfsService;
+    private FileService fileService;
+    @Autowired
+    private ReadModelService readModelService;
+    @Autowired
+    private TraceReadModelMapper readModelMapper;
     @Autowired
     private TransactionTemplate transactionTemplate;
 
@@ -115,6 +125,8 @@ public class BatchServiceImpl implements BatchService
                 .stageFields(TraceStage.PRODUCTION, values)
                 .required("distributorUsername", to.getDistributorUsername());
         UserAccount distributor = resolvePartner(v, "distributorUsername", to.getDistributorUsername(), UserRole.DISTRIBUTOR);
+        // 生产认证必须是本账号经 /upload 上传、尚未被使用的文件
+        fileService.checkUsable(v, "productionCert", (String) values.get("productionCert"), me, tn, TraceStage.PRODUCTION);
         v.throwIfInvalid();
 
         ChainTraceReader chain = reader();
@@ -152,6 +164,8 @@ public class BatchServiceImpl implements BatchService
             }
         }
 
+        // 占用文件：交易确认后据此绑定；未决期间不会被当成孤儿清理
+        fileService.claim((String) values.get("productionCert"), me, tn, TraceStage.PRODUCTION);
         List<Object> params = new ArrayList<>();
         params.add(tn);
         params.addAll(values.values());
@@ -177,6 +191,7 @@ public class BatchServiceImpl implements BatchService
                 .stageFields(TraceStage.DISTRIBUTION, values)
                 .required("retailerUsername", to.getRetailerUsername());
         UserAccount retailer = resolvePartner(v, "retailerUsername", to.getRetailerUsername(), UserRole.RETAILER);
+        fileService.checkUsable(v, "inspectionReport", (String) values.get("inspectionReport"), me, tn, TraceStage.DISTRIBUTION);
         v.throwIfInvalid();
 
         TraceBatch batch = requireBatch(tn);
@@ -201,6 +216,7 @@ public class BatchServiceImpl implements BatchService
 
         values.put("distributePrice", TraceValidator.toLong(to.getDistributePrice()));
         values.put("distributeQuantity", TraceValidator.toLong(to.getDistributeQuantity()));
+        fileService.claim((String) values.get("inspectionReport"), me, tn, TraceStage.DISTRIBUTION);
         List<Object> params = new ArrayList<>();
         params.add(tn);
         params.addAll(values.values());
@@ -378,29 +394,39 @@ public class BatchServiceImpl implements BatchService
     // ---------------------------------------------------------------- 查询
 
     @Override
-    public List<Map<String, Object>> list()
+    public PageResult<Map<String, Object>> list(PageQuery page, boolean todo, String keyword)
     {
         UserAccount me = currentUser();
-        LambdaQueryWrapper<TraceBatch> query = new LambdaQueryWrapper<TraceBatch>().orderByDesc(TraceBatch::getId);
+        Long producerId = null;
+        Long distributorId = null;
+        Long retailerId = null;
+        Integer todoStage = null;
         switch (UserRole.parse(me.getRole())) {
             case PRODUCER:
-                query.eq(TraceBatch::getProducerId, me.getId());
+                producerId = me.getId();
+                // 轮到生产商：链上还没有生产记录（含待确认、失败）
+                todoStage = todo ? 0 : null;
                 break;
             case DISTRIBUTOR:
-                query.eq(TraceBatch::getDistributorId, me.getId());
+                distributorId = me.getId();
+                todoStage = todo ? 1 : null;
                 break;
             case RETAILER:
-                query.eq(TraceBatch::getRetailerId, me.getId());
+                retailerId = me.getId();
+                todoStage = todo ? 2 : null;
                 break;
             default:
-                // 管理员看全部
+                // 管理员看全部，没有「待我处理」
         }
-        List<TraceBatch> batches = batchMapper.selectList(query);
+        String like = likePattern(keyword);
+        long total = readModelMapper.countBatches(producerId, distributorId, retailerId, todoStage, like);
+        List<BatchListRow> batches = total <= page.offset() ? Collections.emptyList()
+                : readModelMapper.pageBatches(producerId, distributorId, retailerId, todoStage, like, page.offset(), page.size);
         if (batches.isEmpty()) {
-            return Collections.emptyList();
+            return new PageResult<>(Collections.emptyList(), total, page.page, page.size);
         }
         Map<String, List<ChainTx>> txByTrace = chainTxMapper.selectList(new LambdaQueryWrapper<ChainTx>()
-                        .in(ChainTx::getTraceNumber, batches.stream().map(TraceBatch::getTraceNumber).collect(Collectors.toList()))
+                        .in(ChainTx::getTraceNumber, batches.stream().map(BatchListRow::getTraceNumber).collect(Collectors.toList()))
                         .isNotNull(ChainTx::getStage)
                         .orderByAsc(ChainTx::getId))
                 .stream().collect(Collectors.groupingBy(ChainTx::getTraceNumber));
@@ -409,8 +435,9 @@ public class BatchServiceImpl implements BatchService
                 .collect(Collectors.toSet()));
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (TraceBatch b : batches) {
+        for (BatchListRow b : batches) {
             List<ChainTx> txs = txByTrace.getOrDefault(b.getTraceNumber(), Collections.emptyList());
+            int reached = b.getStageReached() == null ? 0 : b.getStageReached();
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("traceNumber", b.getTraceNumber());
             row.put("productName", b.getProductName());
@@ -418,14 +445,35 @@ public class BatchServiceImpl implements BatchService
             row.put("producer", party(users.get(b.getProducerId())));
             row.put("distributor", party(users.get(b.getDistributorId())));
             row.put("retailer", party(users.get(b.getRetailerId())));
+            row.put("stageReached", reached);
             Map<String, Object> stages = new LinkedHashMap<>();
             for (TraceStage stage : TraceStage.values()) {
-                stages.put(stage.name(), txStatus(pick(txs, stage)));
+                Map<String, Object> status = txStatus(pick(txs, stage));
+                boolean onChain = reached >= stage.code();
+                // 读模型显示链上已写入、但本系统没有交易记录（重建时回填的旧批次）：按链上事实显示已上链
+                if (onChain && NOT_STARTED.equals(status.get("status"))) {
+                    status.put("status", CONFIRMED);
+                }
+                status.put("onChain", onChain);
+                stages.put(stage.name(), status);
             }
             row.put("stages", stages);
             result.add(row);
         }
-        return result;
+        return new PageResult<>(result, total, page.page, page.size);
+    }
+
+    /** 关键字转 LIKE 模式：转义反斜杠、百分号、下划线；空白不过滤 */
+    static String likePattern(String keyword)
+    {
+        if (StrUtil.isBlank(keyword)) {
+            return null;
+        }
+        String k = keyword.trim();
+        if (k.length() > 64) {
+            k = k.substring(0, 64);
+        }
+        return "%" + k.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
     }
 
     @Override
@@ -487,6 +535,10 @@ public class BatchServiceImpl implements BatchService
             s.put("writerIsMe", writer != null && writer.equalsIgnoreCase(me.getChainAddress()));
             s.put("data", onChain.get(stage));
             s.put("hasFile", TraceFields.fileField(stage).isPresent() && onChain.containsKey(stage));
+            // 文件状态：是否已绑定、本地 IPFS 里是否还在（缺失时前端给出明确提示，不显示空图片）
+            s.put("file", TraceFields.fileField(stage).isPresent() && onChain.containsKey(stage)
+                    ? fileService.describe(traceNumber, stage, (String) onChain.get(stage).get(TraceFields.fileField(stage).get()), true)
+                    : null);
             s.put("corrections", corrections.stream().filter(c -> c.getStage() == stage.code())
                     .map(c -> correctionView(c, stage, false)).collect(Collectors.toList()));
             stages.add(s);
@@ -669,15 +721,18 @@ public class BatchServiceImpl implements BatchService
     public Map<String, Object> publicDetail(String traceNumber)
     {
         TraceValidator.create().traceNumber("traceNumber", traceNumber).throwIfInvalid();
-        ChainTraceReader chain = reader();
-        Map<String, Object> production = chain.stage(traceNumber, TraceStage.PRODUCTION);
-        if (production == null) {
+        // 读模型优先；还没有这一行（例如确认回调时链暂时读不到）才读一次链并补进读模型
+        TraceReadModel row = readModelService.get(traceNumber);
+        if (row == null) {
+            row = readModelService.refresh(traceNumber);
+        }
+        if (row == null || row.getProductionData() == null) {
             throw new BusinessException(404, "未找到该溯源信息");
         }
         Map<TraceStage, Map<String, Object>> data = new EnumMap<>(TraceStage.class);
-        data.put(TraceStage.PRODUCTION, production);
-        data.put(TraceStage.DISTRIBUTION, chain.stage(traceNumber, TraceStage.DISTRIBUTION));
-        data.put(TraceStage.RETAIL, chain.stage(traceNumber, TraceStage.RETAIL));
+        data.put(TraceStage.PRODUCTION, parseData(row.getProductionData()));
+        data.put(TraceStage.DISTRIBUTION, parseData(row.getDistributionData()));
+        data.put(TraceStage.RETAIL, parseData(row.getRetailData()));
 
         List<ChainTx> txs = chainTxMapper.selectList(new LambdaQueryWrapper<ChainTx>()
                 .eq(ChainTx::getTraceNumber, traceNumber)
@@ -698,7 +753,12 @@ public class BatchServiceImpl implements BatchService
                     }
                 }
                 pub.put("timestamp", d.get("timestamp"));
-                pub.put("hasFile", TraceFields.fileField(stage).map(name -> StrUtil.isNotBlank((String) d.get(name))).orElse(false));
+                String cid = TraceFields.fileField(stage).map(name -> (String) d.get(name)).orElse(null);
+                pub.put("hasFile", StrUtil.isNotBlank(cid));
+                if (StrUtil.isNotBlank(cid)) {
+                    // 只给状态，不给 CID：AVAILABLE 可读 / MISSING 存储节点上已缺失 / NOT_BOUND 未绑定 / UNAVAILABLE 存储服务不可用
+                    pub.put("fileState", publicFileState(fileService.describe(traceNumber, stage, cid, true)));
+                }
             }
             // 兼容原消费者页面的 producer / distributor / retailer 三段结构
             result.put(legacyKey(stage), pub);
@@ -718,32 +778,46 @@ public class BatchServiceImpl implements BatchService
             stages.add(s);
         }
         result.put("stages", stages);
+        // 数据来源：读模型（由读链结果写入）；syncedAt 为最近一次内容变化的时间
+        result.put("source", "READ_MODEL");
+        result.put("syncedAt", row.getSyncedAt());
         return result;
     }
 
+    private static Map<String, Object> parseData(String json)
+    {
+        return json == null ? null : JSONUtil.parseObj(json);
+    }
+
+    private static String publicFileState(Map<String, Object> described)
+    {
+        if (!"BOUND".equals(described.get("state"))) {
+            return "NOT_BOUND";
+        }
+        Object available = described.get("available");
+        return Boolean.TRUE.equals(available) ? "AVAILABLE" : Boolean.FALSE.equals(available) ? "MISSING" : "UNAVAILABLE";
+    }
+
     @Override
-    public PublicFile publicFile(String traceNumber, String stageName)
+    public PageResult<Map<String, Object>> searchPublic(String keyword, PageQuery page)
+    {
+        return readModelService.searchPublic(keyword, page);
+    }
+
+    @Override
+    public FileService.PublicFile publicFile(String traceNumber, String stageName)
     {
         TraceValidator.create().traceNumber("traceNumber", traceNumber).throwIfInvalid();
         TraceStage stage = parsePublicFileStage(stageName);
         String field = TraceFields.fileField(stage).orElseThrow(() -> new BusinessException(400, "该阶段没有文件"));
-        // CID 只从链上该溯源号该阶段的字段读取，调用方无法指定任意 CID
+        // CID 只从链上该溯源号该阶段的字段读取，调用方无法指定任意 CID；还必须与本系统已绑定（BOUND）的记录一致
         Map<String, Object> data = reader().stage(traceNumber, stage);
         String cid = data == null ? null : (String) data.get(field);
         if (StrUtil.isBlank(cid)) {
-            throw new BusinessException(404, "该溯源号的" + STAGE_LABELS.get(stage) + "阶段没有绑定文件");
+            throw new BusinessException(404, "该溯源号的" + STAGE_LABELS.get(stage) + "阶段没有登记文件",
+                    Collections.singletonMap("errorCode", "FILE_NOT_BOUND"));
         }
-        byte[] bytes;
-        try {
-            bytes = ipfsService.loadFile(cid);
-        } catch (RuntimeException e) {
-            log.warn("读取 IPFS 文件 {} 失败", cid, e);
-            throw new BusinessException(502, "读取文件失败，请稍后重试");
-        }
-        if (bytes == null) {
-            throw new BusinessException(404, "文件不存在");
-        }
-        return new PublicFile(bytes, sniffContentType(bytes));
+        return fileService.openPublic(traceNumber, stage, cid);
     }
 
     private static TraceStage parsePublicFileStage(String stageName)
@@ -753,27 +827,6 @@ public class BatchServiceImpl implements BatchService
             return TraceStage.valueOf(s);
         }
         throw new BusinessException(400, "stage 只能是 production（生产认证）或 distribution（质检报告）");
-    }
-
-    /** 按文件头判断图片类型；无法识别时按二进制下载，避免浏览器把任意内容当 HTML 渲染 */
-    static String sniffContentType(byte[] b)
-    {
-        if (b.length >= 8 && (b[0] & 0xff) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
-            return "image/png";
-        }
-        if (b.length >= 3 && (b[0] & 0xff) == 0xff && (b[1] & 0xff) == 0xd8 && (b[2] & 0xff) == 0xff) {
-            return "image/jpeg";
-        }
-        if (b.length >= 6 && b[0] == 'G' && b[1] == 'I' && b[2] == 'F' && b[3] == '8') {
-            return "image/gif";
-        }
-        if (b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') {
-            return "image/webp";
-        }
-        if (b.length >= 5 && b[0] == '%' && b[1] == 'P' && b[2] == 'D' && b[3] == 'F') {
-            return "application/pdf";
-        }
-        return "application/octet-stream";
     }
 
     private static String legacyKey(TraceStage stage)

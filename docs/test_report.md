@@ -1,5 +1,7 @@
 # 测试报告
 
+截至 [`61a7d17`](https://github.com/asifours-blip/traceability-system/commit/61a7d17dcd5b2b72bd8ab9ffa2637d2b8848418f)，[CI 36456705657](https://github.com/asifours-blip/traceability-system/actions/runs/36456705657) 的后端汇总为 164 项、0 失败、0 错误、31 项条件跳过，即实际执行 133 项；合约测试 37 项通过。默认 CI 前端只执行 lint。下文保留 2026-09-28 阶段 5 的本地记录，152 项是当时的套件数量，不是上述提交的当前数量。不同环境的测试不得简单相加；v3 的独立记录见 [产物索引](artifacts/README.md)。
+
 日期：2026-09-28（本地，阶段 5 更新：登录限流、恢复演练校验测试）
 
 ## 命令

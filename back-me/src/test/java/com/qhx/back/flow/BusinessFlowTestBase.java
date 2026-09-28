@@ -215,6 +215,24 @@ abstract class BusinessFlowTestBase extends FlowTestSupport {
     }
 
     @Test
+    void v3链上指定地址未映射账号时拒绝旧台账写入并显示链上地址() throws Exception {
+        Party p = party(UserRole.PRODUCER);
+        Party d = party(UserRole.DISTRIBUTOR);
+        Party r = party(UserRole.RETAILER);
+        String tn = produced(p, d);
+        String externalAddress = "0x7777777777777777777777777777777777777777";
+        assertTrue(fake.redesignateV3(tn, p.user.getChainAddress(), externalAddress));
+        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d))), d.token, 403);
+        assertTrue(fake.requestsFor("addTraceInfoByDistributor").isEmpty());
+        assertEquals(d.user.getId(), traceBatchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>()
+                .eq(TraceBatch::getTraceNumber, tn)).getDistributorId());
+        assertEquals("PARTIAL", readModelService.get(tn).getClaimStatus());
+        assertEquals(externalAddress, perform(get("/batches/" + tn), p.token, 200)
+                .getJSONObject("data").getStr("chainDesignatedDistributor"));
+    }
+
+    @Test
     void v3仅生产批次重建后恢复链上分销指定并可继续分销() throws Exception {
         Party p = party(UserRole.PRODUCER);
         Party d = party(UserRole.DISTRIBUTOR);

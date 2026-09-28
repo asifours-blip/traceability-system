@@ -224,6 +224,14 @@ public class BatchServiceImpl implements BatchService
         if (producer == null || !producer.getChainAddress().equalsIgnoreCase(chain.actor(actors, TraceStage.PRODUCTION))) {
             throw new BusinessException(409, "链上生产记录的写入者不是本批次的生产商，拒绝交接");
         }
+        if ("V3".equals(version(batch))) {
+            List<String> designated = chain.designations(tn);
+            if (designated == null || !me.getChainAddress().equalsIgnoreCase(designated.get(0))) {
+                log.warn("v3 批次 {} 分销台账与链上指定不一致：台账账号 {}，链上地址 {}",
+                        tn, me.getId(), designated == null ? null : designated.get(0));
+                throw new AuthException(403, "链上指定分销商已变更，请核对批次详情并联系管理员同步账号");
+            }
+        }
 
         if (!"V3".equals(version(batch))) {
             if (batch.getRetailerId() == null) {
@@ -272,6 +280,14 @@ public class BatchServiceImpl implements BatchService
         }
         // 依赖上一阶段的规则以链上数据为准
         ChainTraceReader chain = reader(batch);
+        if ("V3".equals(version(batch))) {
+            List<String> designated = chain.designations(tn);
+            if (designated == null || !me.getChainAddress().equalsIgnoreCase(designated.get(1))) {
+                log.warn("v3 批次 {} 零售台账与链上指定不一致：台账账号 {}，链上地址 {}",
+                        tn, me.getId(), designated == null ? null : designated.get(1));
+                throw new AuthException(403, "链上指定零售商已变更，请核对批次详情并联系管理员同步账号");
+            }
+        }
         Map<String, Object> distribution = chain.stage(tn, TraceStage.DISTRIBUTION);
         if (distribution == null) {
             throw new BusinessException(409, "该批次的分销信息尚未上链，不能录入零售信息");
@@ -303,6 +319,10 @@ public class BatchServiceImpl implements BatchService
             throw new BusinessException(400, "只能指定分销商或零售商");
         }
         TraceBatch batch = requireBatch(traceNumber);
+        if ("V3".equals(version(batch))) {
+            readModelService.refresh(traceNumber);
+            batch = requireBatch(traceNumber);
+        }
         Long owner = stage == TraceStage.DISTRIBUTION ? batch.getProducerId() : batch.getDistributorId();
         if (!me.getId().equals(owner)) {
             throw new AuthException(403, stage == TraceStage.DISTRIBUTION

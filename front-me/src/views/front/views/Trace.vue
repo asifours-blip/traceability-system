@@ -3,12 +3,12 @@
     <div class="query-card">
         <div class="card-header">
             <h2 class="card-title">溯源查询</h2>
-            <p class="card-subtitle">请输入农产品溯源码进行查询</p>
+            <p class="card-subtitle">输入溯源码、产品名或生产企业进行查询</p>
         </div>
-        <el-form :model="form" ref="form" class="apple-form">
-            <el-form-item label="" prop="traceNumber">
-                <el-input v-model.number="form.traceNumber" type="textarea" :rows="3" placeholder="请输入您想要查询的溯源码"
-                    @clear="onSearch = false;" class="custom-textarea"></el-input>
+        <el-form :model="form" ref="form" class="apple-form" @submit.native.prevent>
+            <el-form-item label="" prop="keyword">
+                <el-input v-model.trim="form.keyword" type="textarea" :rows="3" placeholder="溯源号 / 产品名 / 生产企业"
+                    class="custom-textarea"></el-input>
             </el-form-item>
             <el-button type="primary" @click="onSubmit" class="submit-btn">查询</el-button>
         </el-form>
@@ -17,39 +17,73 @@
     <div class="result-card">
         <div class="card-header">
             <h2 class="card-title">查询结果</h2>
-            <p class="card-subtitle">查询到的农产品溯源信息</p>
+            <p class="card-subtitle">只显示公开信息；列表来自读模型，详情页可查看各阶段与交易哈希</p>
         </div>
-        <div v-if="!onSearch" class="info-tip">请在左侧查询栏中输入溯源码进行查询</div>
-        <div v-else-if="Object.keys(detail).length === 0" class="info-tip no-data">该溯源码无对应信息，请确认后重新查询</div>
-
-        <!-- 溯源查询成功后才展示 -->
-        <div v-else class="result-actions">
-            <el-button type="primary" @click="$router.push({ path: '/traceDetail/' + form.traceNumber })"
-                class="detail-btn">查看详情</el-button>
-        </div>
+        <div v-if="!onSearch" class="info-tip">请在左侧查询栏中输入关键字进行查询</div>
+        <div v-else-if="error" class="info-tip no-data">{{ error }}</div>
+        <div v-else-if="!loading && total === 0" class="info-tip no-data">没有匹配的溯源信息，请确认后重新查询</div>
+        <template v-else>
+            <el-table v-loading="loading" :data="records" size="small" class="result-table">
+                <el-table-column label="溯源号" min-width="150">
+                    <template slot-scope="scope">
+                        <router-link :to="'/traceDetail/' + encodeURIComponent(scope.row.traceNumber)">{{ scope.row.traceNumber }}</router-link>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="productName" label="产品" min-width="80"></el-table-column>
+                <el-table-column prop="companyName" label="生产企业" min-width="100"></el-table-column>
+                <el-table-column prop="productTime" label="生产日期" width="100"></el-table-column>
+                <el-table-column label="进度" width="80">
+                    <template slot-scope="scope">{{ ['', '已生产', '已分销', '已零售'][scope.row.stageReached] }}</template>
+                </el-table-column>
+            </el-table>
+            <el-pagination class="pager" small layout="total, prev, pager, next" :total="total" :current-page="page"
+                :page-size="size" @current-change="p => { page = p; search() }"></el-pagination>
+        </template>
     </div>
 </div>
 </template>
 
 <script>
+import { searchTrace } from '@/apis/trace'
+
+// 消费者查询（免登录）：后端 /trace/search 分页查读模型，只返回公开字段
 export default {
     name: 'trace-view',
     data() {
         return {
             form: {
-                traceNumber: '', // 输入的溯源码
+                keyword: '',
             },
-            detail: [], // 溯源详细信息
-            onSearch: false, // 搜索情况
+            records: [],
+            total: 0,
+            page: 1,
+            size: 10,
+            loading: false,
+            error: '',
+            onSearch: false,
         };
     },
     methods: {
-        async onSubmit() {
-            if (!this.form.traceNumber)
-                return this.$message.error('请输入溯源码');
+        onSubmit() {
+            if (!this.form.keyword)
+                return this.$message.error('请输入关键字');
+            this.page = 1
+            this.search()
+        },
+        async search() {
             this.onSearch = true;
-            const { data } = await this.$http.get('/trace/detail/' + this.form.traceNumber)
-            this.detail = data || [];
+            this.loading = true
+            const res = await searchTrace({ keyword: this.form.keyword, page: this.page, size: this.size })
+            this.loading = false
+            if (res.code === 200) {
+                this.records = res.data.records
+                this.total = res.data.total
+                this.error = ''
+            } else {
+                this.records = []
+                this.total = 0
+                this.error = res.mes
+            }
         }
     },
 };
@@ -165,6 +199,15 @@ export default {
 .info-tip.no-data {
     color: #ff3b30;
     border-color: #ff3b30;
+}
+
+.result-table {
+    width: 100%;
+}
+
+.pager {
+    margin-top: 12px;
+    text-align: right;
 }
 
 .result-actions {

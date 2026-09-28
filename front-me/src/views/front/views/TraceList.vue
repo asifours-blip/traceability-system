@@ -2,79 +2,66 @@
 <div class="page-container">
   <div class="table-card">
     <div class="card-header">
-      <h2 class="card-title">溯源列表</h2>
-      <p class="card-subtitle">农产品溯源信息一览</p>
+      <h2 class="card-title">溯源档案</h2>
+      <p class="card-subtitle">与本账号相关的批次（管理员可见全部）；列表分页读数据库与读模型，详情再读链</p>
     </div>
-    <el-table :data="list" border stripe v-loading="loading" class="apple-table">
-      <el-table-column label="溯源码" prop="traceNumber">
+    <el-table :data="list" border stripe v-loading="loading" class="apple-table" empty-text="暂无批次">
+      <el-table-column label="溯源号" prop="traceNumber" min-width="170">
         <template slot-scope="scope">
           <div class="trace-number-cell">
-            <i class="el-icon-document-copy copy-icon" v-if="scope.row.traceNumber"
-              @click="copyData(scope.row.traceNumber)"></i>
+            <i class="el-icon-document-copy copy-icon" @click="copyData(scope.row.traceNumber)"></i>
             <span>{{ scope.row.traceNumber }}</span>
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="农产品名称">
-        <template slot-scope="scope">
-          {{ scope.row.producer.productName }}
-        </template>
+      <el-table-column label="农产品" prop="productName"></el-table-column>
+      <el-table-column label="生产商">
+        <template slot-scope="scope">{{ party(scope.row.producer) }}</template>
       </el-table-column>
-      <el-table-column label="生产公司名称">
-        <template slot-scope="scope">
-          {{ scope.row.producer.companyName }}
-        </template>
+      <el-table-column label="分销商">
+        <template slot-scope="scope">{{ party(scope.row.distributor) }}</template>
       </el-table-column>
-      <el-table-column label="生产时间">
-        <template slot-scope="scope">
-          {{ scope.row.producer.productTime }}
-        </template>
+      <el-table-column label="零售商">
+        <template slot-scope="scope">{{ party(scope.row.retailer) }}</template>
       </el-table-column>
-      <el-table-column label="分销公司名称">
-        <template slot-scope="scope">
-          {{ scope.row.distributor.companyName }}
-        </template>
+      <el-table-column label="进度" width="120" align="center">
+        <template slot-scope="scope">{{ progress(scope.row) }}</template>
       </el-table-column>
-      <el-table-column label="运输方式">
-        <template slot-scope="scope">
-          {{ scope.row.distributor.transportMethod }}
-        </template>
-      </el-table-column>
-      <el-table-column label="零售公司名称">
-        <template slot-scope="scope">
-          {{ scope.row.retailer.companyName }}
-        </template>
-      </el-table-column>
-      <el-table-column label="销售时间">
-        <template slot-scope="scope">
-          {{ scope.row.retailer.saleTime }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="200" align="center">
+      <el-table-column label="操作" width="260" align="center">
         <template slot-scope="scope">
           <el-button type="primary" size="small" class="action-button"
-            @click="$router.push('/qrcodeTrace/' + scope.row.traceNumber)">
-            扫码溯源
+            @click="$router.push('/qrcodeTrace/' + encodeURIComponent(scope.row.traceNumber))">
+            二维码
           </el-button>
           <el-button type="success" size="small" class="action-button"
-            @click="$router.push('/traceDetail/' + scope.row.traceNumber)">
-            详情
+            @click="$router.push('/batch/' + encodeURIComponent(scope.row.traceNumber))">
+            批次详情
+          </el-button>
+          <el-button size="small" class="action-button"
+            @click="$router.push('/traceDetail/' + encodeURIComponent(scope.row.traceNumber))">
+            消费者视图
           </el-button>
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination class="pager" background layout="total, sizes, prev, pager, next" :total="total"
+      :current-page="page" :page-size="size" :page-sizes="[10, 20, 50, 100]"
+      @current-change="p => { page = p; loadData() }" @size-change="s => { size = s; page = 1; loadData() }"></el-pagination>
   </div>
 </div>
 </template>
 
 <script>
-import { getTraceList } from "@/apis/trace"
+import { listBatches } from "@/apis/trace"
 
 export default {
   name: "TraceList",
   data() {
     return {
       list: [],
+      total: 0,
+      page: 1,
+      size: 10,
       loading: false
     }
   },
@@ -84,14 +71,23 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
-      const res = await getTraceList()
+      const res = await listBatches({ page: this.page, size: this.size })
+      this.loading = false
       if (res.code === 200) {
-        this.list = res.data
-        this.loading = false
+        this.list = res.data.records
+        this.total = res.data.total
       } else {
         this.list = []
-        this.loading = false
+        this.total = 0
+        this.$message.error(res.mes)
       }
+    },
+    party(p) {
+      return p ? (p.companyName || p.username) : '未指定'
+    },
+    progress(row) {
+      const done = ['PRODUCTION', 'DISTRIBUTION', 'RETAIL'].filter(k => row.stages[k].status === 'CONFIRMED').length
+      return `已上链 ${done} / 3`
     }
   }
 }
@@ -142,6 +138,11 @@ export default {
   color: #86868b;
   margin-top: 8px;
   font-weight: 400;
+}
+
+.pager {
+  margin-top: 16px;
+  text-align: right;
 }
 
 .apple-table {

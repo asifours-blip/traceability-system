@@ -1,0 +1,65 @@
+name: Local chain smoke
+
+# 只能手动触发：在 ubuntu runner 上搭 4 节点 FISCO BCOS 2.7.2 + WeBASE-Front v1.5.5，
+# 跑 scripts/local-chain/run-all.sh（部署合约、三阶段、反例、共识停滞场景、后端代码直连真实链的业务闭环）。
+# 下载只来自官方源并校验哈希：
+#   FISCO BCOS Release（GitHub）、WeBASE-Front 官方镜像（Docker Hub webasepro，按摘要）与官方仓库标签（按提交哈希）、
+#   Ubuntu 官方源 OpenSSL 1.1.1f、Adoptium JDK 11/21、Apache Maven（archive.apache.org，sha512 固定在下面）、
+#   Maven Central 依赖（mvn -C：校验和不符即失败）。哈希都写在 scripts/local-chain/*.sh 与本文件里。
+on:
+  workflow_dispatch:
+    inputs:
+      skip_stall:
+        description: "跳过共识停滞场景（停 2/4 节点，约多等 40 秒）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-all:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      E2E_HOME: ${{ github.workspace }}/../trace-e2e
+      USE_OFFICIAL: "1"
+      MAVEN_VERSION: "3.9.16"
+      MAVEN_SHA512: "831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6"
+    steps:
+      # 第三方 action 固定到提交哈希（注释为对应标签）
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Apache Maven（官方归档，sha512 校验）
+        run: |
+          set -euo pipefail
+          mkdir -p "$E2E_HOME/tools"
+          tgz="$E2E_HOME/tools/apache-maven-$MAVEN_VERSION-bin.tar.gz"
+          curl -sSfL --retry 3 -o "$tgz" "https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz"
+          echo "$MAVEN_SHA512  $tgz" | sha512sum -c --quiet -
+          tar -xzf "$tgz" -C "$E2E_HOME/tools"
+          echo "MAVEN_HOME_E2E=$E2E_HOME/tools/apache-maven-$MAVEN_VERSION" >> "$GITHUB_ENV"
+
+      - name: run-all（官方源模式）
+        run: |
+          args=()
+          if [[ "${{ inputs.skip_stall }}" == "true" ]]; then args+=(--skip-stall); fi
+          bash scripts/local-chain/run-all.sh "${args[@]}"
+
+      - name: 链与 WeBASE-Front 日志（失败时排查）
+        if: failure()
+        run: |
+          tail -n 80 "$E2E_HOME"/webase-front/log/*.log 2>/dev/null || true
+          tail -n 40 "$E2E_HOME"/nodes/127.0.0.1/node0/log/*.log 2>/dev/null || true
+
+      - name: 停止本地链
+        if: always()
+        run: bash scripts/local-chain/stop.sh || true
+
+      # 运行记录（冒烟 json/md、Java 测试记录）作为构建产物保存，不回写仓库
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: local-chain-run-${{ github.run_id }}
+          path: docs/artifacts/local-chain-*
+          if-no-files-found: warn

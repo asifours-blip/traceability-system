@@ -45,3 +45,29 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - name: Install
+        run: npm ci
+      # 编译器来自 npm 包 solc@0.4.25，Hardhat 只作进程内 EVM，不连 FISCO 链、不联网下载编译器
+      - name: Compile and test
+        run: npm test
+        env:
+          HARDHAT_DISABLE_TELEMETRY_PROMPT: "true"
+      # 提交的 abi/Trace.json 必须与源码编译结果一致
+      - name: Check committed ABI is up to date
+        run: |
+          npm run abi
+          git diff --exit-code -- abi/Trace.json abi/TraceV3.json

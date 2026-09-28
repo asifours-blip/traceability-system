@@ -1,7 +1,10 @@
 pragma solidity ^0.4.25;
 pragma experimental ABIEncoderV2;
 
-contract SystemInfo {
+import "./Ownable.sol";
+
+//系统信息：任何人可读，只有 owner 可以修改或重置
+contract SystemInfo is Ownable {
     // 定义一个结构体来存储系统信息
     struct SystemDetails {
         string name;
@@ -16,7 +19,7 @@ contract SystemInfo {
     SystemDetails private systemInfo;
 
     // 设置系统信息的函数
-    function setSystemInfo(string memory _name, string memory _version, string memory _description) public {
+    function setSystemInfo(string memory _name, string memory _version, string memory _description) public onlyOwner {
         systemInfo = SystemDetails(_name, _version, _description);
     }
 
@@ -25,8 +28,8 @@ contract SystemInfo {
         return (systemInfo.name, systemInfo.version, systemInfo.description);
     }
 
-    // 清空系统信息的函数
-    function clearSystemInfo() public {
+    // 重置系统信息为默认值的函数
+    function clearSystemInfo() public onlyOwner {
         systemInfo = SystemDetails("农产品溯源系统", "v1.0", "一个溯源农产品的系统案例");
     }
 }

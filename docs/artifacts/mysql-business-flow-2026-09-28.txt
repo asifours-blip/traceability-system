@@ -1,0 +1,54 @@
+# 真实 MySQL schema 初始化 + 业务闭环冒烟 2026-09-28 06:34:45 +0800
+# 容器 trace-mysql-test（mysql:8.0 官方镜像，mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b），端口 127.0.0.1:13306，库 trace_it
+# MySQL 版本：8.0.46
+第 1 轮 auth-schema.sql 退出码 0
+第 1 轮 chain-tx-schema.sql 退出码 0
+第 1 轮 business-schema.sql 退出码 0
+第 2 轮 auth-schema.sql 退出码 0
+第 2 轮 chain-tx-schema.sql 退出码 0
+第 2 轮 business-schema.sql 退出码 0
+## 建出的表
+account_role_grant
+chain_tx
+trace_assignment_log
+trace_batch
+trace_correction
+user_account
+user_session
+## trace_batch 结构
+Create Table: CREATE TABLE `trace_batch` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `trace_number` varchar(64) NOT NULL COMMENT '溯源号，唯一；生产商提交生产信息时占用',
+  `product_name` varchar(128) DEFAULT NULL COMMENT '产品名（仅列表展示用的链下副本，以链上数据为准）',
+  `producer_id` bigint NOT NULL COMMENT '建档生产商账号',
+  `distributor_id` bigint DEFAULT NULL COMMENT '当前指定的分销商账号，只有它能写分销阶段',
+  `retailer_id` bigint DEFAULT NULL COMMENT '当前指定的零售商账号，只有它能写零售阶段',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_trace_batch_trace_number` (`trace_number`),
+  KEY `idx_trace_batch_producer` (`producer_id`),
+  KEY `idx_trace_batch_distributor` (`distributor_id`),
+  KEY `idx_trace_batch_retailer` (`retailer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='批次归属与交接对象'
+## BusinessFlowMySqlSmokeTest（同一容器连续运行两次；Spring 启动时第 3、4 次执行 schema）
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.81 s -- in com.qhx.back.flow.BusinessFlowMySqlSmokeTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.95 s -- in com.qhx.back.flow.BusinessFlowMySqlSmokeTest
+  PASS 非指定的分销商写分销_403且不发交易 1.069s
+  PASS 生产商看不到也改不了别人的批次 0.783s
+  PASS 建号_授权结果未知_账号待确认不可登录_查证后启用 0.508s
+  PASS 生产商在分销前可变更分销商_留历史_分销上链后不能再改 0.827s
+  PASS 未绑定的CID不能公开读取_绑定的按链上CID读取 0.394s
+  PASS 非指定的零售商写零售_403且不发交易 0.709s
+  PASS 结果未知时重复提交_409且不再发请求_详情显示待确认可查证 0.891s
+  PASS 更正只能追加_只有该阶段写入者能提交 0.65s
+  PASS 建号_链上已有角色则跳过授权交易 0.237s
+  PASS 主流程_指定交接_三阶段上链_消费者只见公开字段_读回公开文件_追加更正 0.717s
+  PASS 字段校验失败_400并指明字段 0.588s
+## 两次运行后的行数
+user_account	67
+chain_tx	34
+trace_batch	18
+trace_assignment_log	32
+trace_correction	6
+account_role_grant	4

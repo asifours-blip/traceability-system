@@ -1,0 +1,73 @@
+# 备份/恢复演练 2026-09-28 22:00 +0800
+# 本机真实跑通：本地隔离链（WSL scripts/local-chain/）+ 真实 kubo（D:\trace-ipfs）+ 真实 MySQL（容器 trace-mysql-test）
+# 为避免污染 trace-mysql-test 里其它阶段留下的数据，本次演练单独用同一容器下的新库 trace_it_drill（演练结束已 DROP）
+
+## 1. 产出真实数据（RealChainBusinessFlowTest，新增 E2E_MYSQL_URL 开关连真实 MySQL）
+命令：
+  MYSQL_DATABASE trace_it_drill（同一容器新建）
+  E2E_MYSQL_URL=jdbc:mysql://127.0.0.1:13306/trace_it_drill?... E2E_MYSQL_USER=root E2E_MYSQL_PASSWORD=<容器 root 密码>
+  E2E_IPFS_API_URL=http://127.0.0.1:5201（WSL→Windows kubo 桥）
+  E2E_TESTS=RealChainBusinessFlowTest bash scripts/local-chain/java-real-chain-test.sh
+
+结果：Tests run=1 errors=0 failures=0（完整记录见同目录 restore-drill-populate-2026-09-28-215835.txt）
+产出：合约地址 0x24fa73a896a5e14c2e8856d60a4695197c146e58；批次 RC3934807；
+生产认证文件 cid=QmdchUqwV8MQ5M2TynjtjoxMUFwHoYEKfksybh37UL4iDF sha256=1ef50bf46f1ad4cba9eb8852f91e12965af2c60dc86eac30a9afc2a7d9ba7672（24 字节，PNG 头 + "realcert-3934807"）
+
+## 2. 备份
+$ MYSQL_DB=trace_it_drill bash scripts/backup/backup-mysql.sh restore-drill
+[backup] 已备份 trace_it_drill → backups/mysql/trace_it_drill-20260928-215947-restore-drill.sql.gz（8.0K，9 条 INSERT 语句）
+
+$ bash scripts/ipfs/stop.sh && bash scripts/backup/backup-ipfs.sh
+[backup] 已备份 kubo repo（D:\trace-ipfs\repo，递归 pin 数 8）→ backups/ipfs/kubo-repo-20260928-220042.tar.gz（76K）
+
+$ bash scripts/backup/backup-chain-identity.sh backups/last-smoke-drill.json   # 从 WSL 的 ~/trace-e2e/last-smoke.json 复制出来的一份
+[backup] 已写入 backups/chain-identity/identity-20260928-220309.json：
+  contractAddress=0x24fa73a896a5e14c2e8856d60a4695197c146e58 groupId=1
+  frontUrl=http://127.0.0.1:5102/WeBASE-Front
+  abiSha256=ac8c69cebe7a9470724ab5ed687e050d48780d40c93851092210907e560c99a6（contracts/abi/Trace.json）
+  repoCommit=3535924
+
+## 3. 恢复到全新 MySQL + 全新 kubo
+$ MYSQL_DB=trace_it_drill bash scripts/backup/restore-mysql.sh backups/mysql/trace_it_drill-*.sql.gz trace-mysql-restore-drill 13307 trace_it_drill
+新建容器 trace-mysql-restore-drill（mysql:8.0，127.0.0.1:13307）；恢复后 COUNT(*)：
+  trace_batch=1 user_account=5 file_object=3 trace_read_model=1
+（information_schema 估算的行数在刚恢复完时不准，脚本输出的是估算值，这里另外跑了一次真 COUNT(*) 核对）
+
+$ bash scripts/backup/restore-ipfs.sh backups/ipfs/kubo-repo-*.tar.gz 'D:\trace-ipfs-restore-drill'
+$ TRACE_IPFS_HOME_WIN='D:\trace-ipfs-restore-drill' IPFS_API_PORT=5202 bash scripts/ipfs/setup.sh
+$ TRACE_IPFS_HOME_WIN='D:\trace-ipfs-restore-drill' IPFS_API_PORT=5202 bash scripts/ipfs/start.sh
+新实例递归 pin 数=8（与备份前一致）；直接核对原文件 CID：
+  curl -X POST http://127.0.0.1:5202/api/v0/cat?arg=QmdchUqwV8MQ5M2TynjtjoxMUFwHoYEKfksybh37UL4iDF
+  → 十六进制头 8950 4e47 0d0a 1a0a 7265 616c 6365 7274 2d33 3933 3438 3037（PNG 头 + "realcert-3934807"，与备份前字节一致）
+
+## 4. 校验：批次 / 链上溯源号 / 文件 CID 三者对得上，消费者页能读回（RealChainRestoreVerifyTest，只读，不发链上交易）
+命令（在 WSL 里跑，链沿用同一条没有变，只换 MySQL 与 kubo）：
+  E2E_MYSQL_URL=jdbc:mysql://127.0.0.1:13307/trace_it_drill?...
+  E2E_MYSQL_PASSWORD=<恢复容器 root 密码> E2E_IPFS_API_URL=http://127.0.0.1:5202
+  E2E_RESTORE_VERIFY_RUN=3934807 E2E_TESTS=RealChainRestoreVerifyTest bash scripts/local-chain/java-real-chain-test.sh
+
+输出：
+[restore-verify] 校验批次 RC3934807（恢复出来的 MySQL=jdbc:mysql://127.0.0.1:13307/trace_it_drill... kubo=http://127.0.0.1:5202）
+[restore-verify] 恢复库直接读消费者公开视图（重建读模型之前）：producer={"companyName":"烟台果园","productName":"苹果","productionLocation":"山东烟台","variety":"红富士","productionBatch":"B-3934807","productTime":"2026-09-20","timestamp":1790603936770,"hasFile":true,"fileState":"AVAILABLE","fileType":"image/png"}
+[restore-verify] 文件读回（恢复库 + 恢复 kubo）：24 字节，与备份前一致
+[restore-verify] 重建读模型（恢复库，含这条链上的历史批次）：{"onChain":5,"rows":{"created":0,"updated":0,"unchanged":5},"removedStale":0,"claims":{"CLAIMED":4,"PARTIAL":0,"UNCLAIMED":1},"batchesBackfilled":0,"partnersBackfilled":0,"files":{"REJECTED":2,"MISSING":1,"ALREADY_BOUND":5},"errors":[],"elapsedMs":470}
+[restore-verify] 重建读模型后再读一次消费者公开视图：不变，批次/溯源号/文件 CID 三者对得上
+RealChainRestoreVerifyTest: tests="1" errors="0" skipped="0" failures="0"
+
+结论：
+- 消费者公开视图在「只恢复了 MySQL、还没有重建读模型」的情况下就已经正确——证明 MySQL 的逻辑备份/恢复本身是完整的，读模型数据没有丢；
+- 恢复出来的 kubo 里同一个 CID 能读到与备份前字节级一致的内容；
+- 针对这条链再跑一次读模型重建（覆盖这条本地链上其它阶段留下的历史批次，onChain=5 不止这一条）不报错、也不改变这条批次的公开视图，说明恢复出来的数据和链上是一致的，重建是安全的幂等操作。
+
+## 5. 清理（全部按演练前的状态收尾）
+- docker rm -f trace-mysql-restore-drill；trace-mysql-test 里 DROP DATABASE trace_it_drill；docker stop trace-mysql-test
+- 停 D:\trace-ipfs-restore-drill 上的 kubo，删除该临时目录；停 D:\trace-ipfs 上的 kubo（备份前已停，未重新启动）
+- 停 WSL→Windows 的两条 ipfs 桥（端口 5201 与 5202）
+- bash scripts/local-chain/stop.sh 停本地隔离链
+- 复核：docker ps -a 无残留的 trace-mysql-restore-drill；WSL 里 pgrep java/fisco/ipfs 均为空
+
+## 不在本次演练范围、且丢失后无法恢复的链下数据（见 docs/backup-restore.md 详细说明）
+账号密码（只存哈希，备份/恢复能保留哈希本身，但没有备份就等于要求所有用户重新设密码）、
+登录会话（token 只存哈希，恢复后全部作废，所有人需要重新登录）、
+交接历史（trace_assignment_log，链上只有最终写入者，中途改派记录只在 MySQL 里）、
+更正记录（trace_correction，链上没有任何形式的存证，纯链下追加数据）。

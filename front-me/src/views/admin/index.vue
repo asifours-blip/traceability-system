@@ -16,7 +16,11 @@
           </el-menu-item>
           <el-menu-item index="/role">
             <i class="el-icon-user"></i>
-            <span slot="title">角色分配</span>
+            <span slot="title">用户管理</span>
+          </el-menu-item>
+          <el-menu-item index="/readModel">
+            <i class="el-icon-refresh"></i>
+            <span slot="title">读模型</span>
           </el-menu-item>
           <el-menu-item index="/block">
               <i class="el-icon-cpu"></i>
@@ -33,6 +37,9 @@
 </template>
 
 <script>
+import { logout } from '@/apis/user';
+import { getToken, clearLogin } from '@/utils/auth';
+
 export default {
   name: 'admin-view',
   data() {
@@ -40,10 +47,14 @@ export default {
     };
   },
   methods: {
-    logout() {
-      this.$message.success('退出成功')
-      localStorage.removeItem('userInfo')
-      this.$router.push('/login')
+    async logout() {
+      // 先让后端撤销 token，再清本地登录态
+      if (getToken()) {
+        await logout();
+      }
+      clearLogin();
+      this.$message.success('退出成功');
+      this.$router.push('/login').catch(() => {});
     },
     goBack() {
       this.$router.go(-1)

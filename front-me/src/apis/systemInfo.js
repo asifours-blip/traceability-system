@@ -1,4 +1,4 @@
-import request from '@/utils/request'
+import request, { TX_TIMEOUT } from '@/utils/request'
 
 export const getSystemInfo = () => {
     return request({
@@ -12,6 +12,9 @@ export const clearSystemInfo = () => {
     return request({
         url: `/clearSystemInfo`,
         method: 'post',
+        // 系统信息写在链上，是交易
+        timeout: TX_TIMEOUT,
+        tx: true
     });
 };
 
@@ -19,6 +22,8 @@ export const setSystemInfo = (data) => {
     return request({
         url: `/setSystemInfo`,
         method: 'post',
-        data
+        data,
+        timeout: TX_TIMEOUT,
+        tx: true
     });
 };

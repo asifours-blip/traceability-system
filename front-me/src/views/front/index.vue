@@ -29,6 +29,9 @@
 </template>
 
 <script>
+import { logout } from '@/apis/user';
+import { getToken, clearLogin } from '@/utils/auth';
+
 export default {
   name: 'home-view',
   data() {
@@ -39,11 +42,12 @@ export default {
         { index: '/distributor', title: '分销商', icon: 'el-icon-truck', roles: ['分销商', '管理员'] },
         { index: '/retailer', title: '零售商', icon: 'el-icon-shopping-cart-full', roles: ['零售商', '管理员'] },
         { index: '/trace', title: '溯源查询', icon: 'el-icon-search', roles: ['生产商', '分销商', '零售商', '消费者', '管理员'] },
-        { index: '/traceList', title: '溯源档案', icon: 'el-icon-search', roles: ['生产商', '分销商', '零售商', '消费者', '管理员'] },
-        { index: '/iot-dashboard', title: '物联网监测', icon: 'el-icon-data-line', roles: ['生产商', '分销商', '零售商', '消费者', '管理员'] },
-        { index: '/userCenter', title: '个人中心', icon: 'el-icon-user', roles: ['生产商', '分销商', '零售商', '消费者', '管理员'] },
+        // 未登录访客（消费者）只保留免登录的溯源查询
+        { index: '/traceList', title: '溯源档案', icon: 'el-icon-search', roles: ['生产商', '分销商', '零售商', '管理员'] },
+        { index: '/iot-dashboard', title: '物联网监测', icon: 'el-icon-data-line', roles: ['生产商', '分销商', '零售商', '管理员'] },
+        { index: '/userCenter', title: '个人中心', icon: 'el-icon-user', roles: ['生产商', '分销商', '零售商', '管理员'] },
         { index: '/admin/setting', title: '系统配置', icon: 'el-icon-setting', roles: ['管理员'] },
-        { index: '/admin/role', title: '角色分配', icon: 'el-icon-s-custom', roles: ['管理员'] }
+        { index: '/admin/role', title: '用户管理', icon: 'el-icon-s-custom', roles: ['管理员'] }
       ]
     };
   },
@@ -51,7 +55,7 @@ export default {
     // 获取当前登录用户的角色
     userRole() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-      const type = userInfo.type; // 0:生产商 1:分销商 2:零售商 3:消费者 4:管理员
+      const type = userInfo.type; // 0:生产商 1:分销商 2:零售商 4:管理员；未登录视为消费者
       const roleMap = {
         '0': '生产商',
         '1': '分销商',
@@ -67,10 +71,14 @@ export default {
     }
   },
   methods: {
-    logout() {
+    async logout() {
+      // 先让后端撤销 token，再清本地登录态
+      if (getToken()) {
+        await logout();
+      }
+      clearLogin();
       this.$message.success('退出成功');
-      localStorage.removeItem('userInfo');
-      this.$router.push('/login');
+      this.$router.push('/login').catch(() => {});
     },
     goBack() {
       this.$router.go(-1);

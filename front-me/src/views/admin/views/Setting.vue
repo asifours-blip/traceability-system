@@ -121,11 +121,6 @@ export default {
                 }
             });
         },
-        logout() {
-            // 实现退出操作
-            localStorage.removeItem('userInfo');
-            this.$router.push('/login');
-        },
         async submitClear() {
             try {
                 await this.$confirm('此操作清空系统信息回归默认值，是否继续？', '提示', {
@@ -135,6 +130,11 @@ export default {
                 return this.$message.warning('已取消')
             }
             clearSystemInfo().then(response => {
+                if (response.code == 200) {
+                    this.$message.success('已清空');
+                } else {
+                    this.$message.error(response.mes);
+                }
                 this.fetchSystemInfo();
             })
         }

@@ -1,0 +1,6 @@
+# RealChainSmokeTest 2026-09-28 01:47:07 +0800：后端 HttpUtil / StageProbe 直连本地隔离链
+# JDK: openjdk version "21.0.12.1" 2026-08-18 LTS；合约地址: 0x4a6179cec51800cabf56c11531a1fc48948e0bb9
+[real-chain] newAgroFood CONFIRMED(hash=0x5bc84ea50f0756dd6193f934d99cc312c90aa2179498d679822610c33e7cc2f6, block=19, status=0x0, code=null, reason=null)
+[real-chain] duplicate newAgroFood REVERTED(hash=0xdab16d36f0394f7394111551c771bac9eb038e14e1920f890889e9453be13bee, block=20, status=0x16, code=null, reason=Trace: traceNumber already exists)
+[real-chain] unknown signer REJECTED(hash=null, block=null, status=null, code=201015, reason=user's privateKey is null)
+tests="1" errors="0" skipped="0" failures="0" 

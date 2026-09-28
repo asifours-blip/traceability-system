@@ -1,12 +1,15 @@
 {
   "info": {
     "name": "农产品溯源系统接口",
-    "description": "本地手工契约。条数以本文件 item 为准，不要写成 60+。未附带真实环境导出结果。",
+    "description": "本地手工契约。条数以本文件 item 为准，不要写成 60+。未附带真实环境导出结果。先调登录把 data.token 填进变量 token；分销/零售请求需换成对应角色账号的 token，否则后端返回 403。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8010" },
-    { "key": "address", "value": "0x0000000000000000000000000000000000000001" },
+    { "key": "username", "value": "producer1" },
+    { "key": "password", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "forgedAddress", "value": "0x0000000000000000000000000000000000000001" },
     { "key": "traceNumber", "value": "SY60202600001" }
   ],
   "item": [
@@ -27,19 +30,19 @@
       }
     },
     {
-      "name": "登录-地址角色校验",
+      "name": "登录-用户名密码（返回 data.token）",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "body": {
           "mode": "raw",
-          "raw": "{\"address\":\"{{address}}\",\"type\":\"0\"}"
+          "raw": "{\"username\":\"{{username}}\",\"password\":\"{{password}}\"}"
         },
         "url": "{{baseUrl}}/login"
       }
     },
     {
-      "name": "写接口-无 address",
+      "name": "写接口-无 token（401）",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -51,12 +54,12 @@
       }
     },
     {
-      "name": "写接口-非法 address",
+      "name": "写接口-只带伪造 address 头（401）",
       "request": {
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "address", "value": "not-an-address" }
+          { "key": "address", "value": "{{forgedAddress}}" }
         ],
         "body": {
           "mode": "raw",
@@ -71,7 +74,7 @@
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "address", "value": "{{address}}" }
+          { "key": "Authorization", "value": "Bearer {{token}}" }
         ],
         "body": {
           "mode": "raw",
@@ -86,7 +89,7 @@
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "address", "value": "{{address}}" }
+          { "key": "Authorization", "value": "Bearer {{token}}" }
         ],
         "body": {
           "mode": "raw",
@@ -101,7 +104,7 @@
         "method": "POST",
         "header": [
           { "key": "Content-Type", "value": "application/json" },
-          { "key": "address", "value": "{{address}}" }
+          { "key": "Authorization", "value": "Bearer {{token}}" }
         ],
         "body": {
           "mode": "raw",
@@ -114,7 +117,7 @@
       "name": "溯源列表-N+1",
       "request": {
         "method": "GET",
-        "header": [{ "key": "address", "value": "{{address}}" }],
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/trace/list"
       }
     },
@@ -130,7 +133,7 @@
       "name": "IoT看板",
       "request": {
         "method": "GET",
-        "header": [{ "key": "address", "value": "{{address}}" }],
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/iot/data?batchId={{traceNumber}}&limit=10"
       }
     }

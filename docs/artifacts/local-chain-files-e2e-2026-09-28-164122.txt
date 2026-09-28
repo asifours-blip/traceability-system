@@ -1,0 +1,45 @@
+# RealChainBusinessFlowTest RealChainFilesE2ETest 2026-09-28 16:41:22 +0800：后端代码直连本地隔离链
+# JDK: openjdk version "21.0.12.1" 2026-08-18 LTS；合约地址: 0x24fa73a896a5e14c2e8856d60a4695197c146e58
+[files-e2e] kubo 0.29.0 @ http://127.0.0.1:5201；合约 0x24fa73a896a5e14c2e8856d60a4695197c146e58
+[files-e2e] 上传 9437307 字节 → cid=Qma878D2s6jbqrvVy8bBLMTCkXsFF6BeiqDXq5Dw9te6JU sha256=ce45200ed217330690996c59ba205a08c9cbcaa403f7c81e135c6c28f5615872 status=UPLOADED 已 pin=true
+[files-e2e] 伪造扩展名（HTML 改名 .png）→ 415 FILE_TYPE_NOT_ALLOWED
+[files-e2e] 生产上链 CONFIRMED hash=0x3c2fcdb8016e61b227e8d276e56c035424820e44bd64efee2f555d678a1c8693 block=18
+[files-e2e] 链上 productionCert=Qma878D2s6jbqrvVy8bBLMTCkXsFF6BeiqDXq5Dw9te6JU；文件状态 BOUND bindSource=TX_CONFIRMED available=true
+[files-e2e] 消费者读回：HTTP 200，9437307 字节，sha256=ce45200ed217330690996c59ba205a08c9cbcaa403f7c81e135c6c28f5615872，公开详情 fileState=AVAILABLE
+[files-e2e]   [ipfs] 已停止
+[files-e2e]   [ipfs] 就绪（2s）：API /ip4/127.0.0.1/tcp/5201，ipfs version 0.29.0，日志 D:\trace-ipfs\logs\daemon-20260928-164147.*
+[files-e2e] kubo 重启后：0.29.0，pin 仍在=true
+[files-e2e] 重启后读回：HTTP 200，sha256=ce45200ed217330690996c59ba205a08c9cbcaa403f7c81e135c6c28f5615872
+[files-e2e] pin rm + repo gc 完成（回收 39 个块）；本地是否还有该 CID：false
+2026-09-28 16:41:49.163 ERROR 5339 --- [           main] c.qhx.back.service.impl.FileServiceImpl  : 已绑定的文件在本地 IPFS 中缺失：FE84904358 PRODUCTION cid=Qma878D2s6jbqrvVy8bBLMTCkXsFF6BeiqDXq5Dw9te6JU
+[files-e2e] GC 后公开读取：HTTP 410 application/json {"data":{"errorCode":"FILE_MISSING"},"mes":"文件缺失：链上登记了该文件，但存储节点上已找不到内容，请联系管理员恢复","code":410}
+[files-e2e] GC 后公开详情 fileState=MISSING；批次详情 file={"state":"BOUND","fileName":"生产认证-84904358.png","mimeType":"image/png","size":9437307,"sha256":"ce45200ed217330690996c59ba205a08c9cbcaa403f7c81e135c6c28f5615872","bindSource":"TX_CONFIRMED","boundAt":"2026-09-28T08:41:46.341+00:00","available":false,"errorCode":"FILE_MISSING","message":"链上登记了该文件，但存储节点上已找不到内容"}
+[files-e2e] 直接调合约写入旧批次 LEGACY-84904358：写入者 0x1729ec510ec8a3342c9077b5e1a8929cdf23b068（本系统无账号），hash=0x20c9b783935151adc56f8854f3b17cf2f8cfd56cdae255b3a08d90ec64919f3d block=20；证书 cid=Qmeth3r2ksJof4Vcht1qpzeTDiqhAzVnnNebkvsWEnukpu（直接存入 kubo，本系统无上传记录）
+[files-e2e] 第一次重建：{"onChain":3,"rows":{"created":2,"updated":1,"unchanged":0},"removedStale":0,"claims":{"CLAIMED":2,"PARTIAL":0,"UNCLAIMED":1},"batchesBackfilled":1,"partnersBackfilled":0,"files":{"REJECTED":2,"ALREADY_BOUND":1,"IMPORTED":1},"errors":[],"elapsedMs":331}
+[files-e2e] 第二次重建（幂等）：{"onChain":3,"rows":{"created":0,"updated":0,"unchanged":3},"removedStale":0,"claims":{"CLAIMED":2,"PARTIAL":0,"UNCLAIMED":1},"batchesBackfilled":0,"partnersBackfilled":0,"files":{"REJECTED":2,"ALREADY_BOUND":2},"errors":[],"elapsedMs":203}
+[files-e2e] 未认领 / 部分认领（1）：
+[files-e2e]   LEGACY-84904358 UNCLAIMED：本系统没有该批次的归属记录；生产阶段链上写入者 0x1729ec510ec8a3342c9077b5e1a8929cdf23b068 没有对应账号
+[files-e2e] 旧批次证书：重建时从 kubo 导入 → 公开读取 HTTP 200，sha256=5dcd148acff8f128856657a0b538f335a38685185df8c99dcfbefbbe56e447a5
+[files-e2e] 补建账号 lp84904358 后重建：{"onChain":3,"rows":{"created":0,"updated":1,"unchanged":2},"removedStale":0,"claims":{"CLAIMED":3,"PARTIAL":0,"UNCLAIMED":0},"batchesBackfilled":1,"partnersBackfilled":0,"files":{"REJECTED":2,"ALREADY_BOUND":2},"errors":[],"elapsedMs":255}
+[files-e2e] lp84904358 的批次列表（分页）：total=1 LEGACY-84904358 生产阶段状态 CONFIRMED
+[files-e2e] 生产商 fp84904358 的批次列表（分页，total=2）：E2E-20260928164109, FE84904358
+[real-chain-flow] 建号 p84912740 PRODUCER roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 d84912740 DISTRIBUTOR roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 r84912740 RETAILER roleState=ALREADY_ON_CHAIN
+[real-chain-flow] 建号 o84912740 DISTRIBUTOR roleState=GRANTED_BY_TX txId=1
+[real-chain-flow] 上传 25 字节 → cid=QmWLNtvcCASiJt8v7u9vaUD1gHKE17SgUzsuTjHj4X2jTR sha256=e505465c65cd501d4356cb62d8844639bfc95124380f487c31e16f35aa08df84
+[real-chain-flow] 生产上链 CONFIRMED hash=0x8d79557397e14db6a8676598342089dd156f86edc52da2ffc01a5297c24ac9c4 block=22 signer=0xa038f6b4eeda5ec464c193d1068de3597ef7ce5d
+[real-chain-flow] 上传 29 字节 → cid=QmT9z87iA6PK97RBtdyv5SyBxixkR9q3zSBpVyU75ZyXNz sha256=a7b991edd88087fd04f82f49be80a29106b5f0a669b1013db4b3f30b44057bfc
+[real-chain-flow] 非指定分销商写分销 → 403：只有该批次指定的分销商可以录入分销信息
+[real-chain-flow] 上传 27 字节 → cid=QmZfDzFq5YDsV9YmBzHB36SCUMZERhYPKvHnfSSt3FKVXV sha256=4440f6f14b43f19bc5117af869e9d14f9dab74a0e1c66cb22de90e94f982bbfe
+[real-chain-flow] 分销上链 CONFIRMED hash=0x2e710a8b5c30620b6d23b25b6f9378e56f622465d453a7d58d6156a0166b2e81 block=23 signer=0xd0678e842e04a00183024cfd77d72fb892b6d5bd
+[real-chain-flow] 零售数量超过分销数量、日期早于生产 → 400：[{"field":"saleQuantity","message":"不能超过分销数量（500）"},{"field":"saleTime","message":"不能早于生产日期（2026-09-20）"}]
+[real-chain-flow] 零售上链 CONFIRMED hash=0x99d817a657056d0360ba5055a35447c52fe294e2e8f29618c8339604f4e6a615 block=24 signer=0xb5da281c8771e659b28ea79abc52368b6cd1f86b
+[real-chain-flow] 零售写入者追加更正 #1
+[real-chain-flow] 非写入者更正 → 403
+[real-chain-flow] 消费者公开视图字段：producer=[companyName, productName, productionLocation, variety, productionBatch, productTime, timestamp, hasFile, fileState, fileType] distributor=[companyName, storageCondition, transportMethod, timestamp, hasFile, fileState, fileType] retailer=[companyName, shelfLife, saleTime, timestamp, hasFile]
+[real-chain-flow] 消费者视图零售更正：[{"id":1,"stage":"RETAIL","fields":[{"field":"shelfLife","label":"保质期（天）","value":"12"}],"reason":"保质期复核","authorCompany":"RETAILER-r84912740","createdAt":"2026-09-28T08:41:54.748+00:00"}]
+[real-chain-flow] 读回公开文件 production：image/png 25 字节（CID 由链上 getAgroFoodInfo 读出）
+[real-chain-flow] 按 CID 直接读取（未登录）→ 401；零售阶段无文件 → 400
+RealChainBusinessFlowTest: tests="1" errors="0" skipped="0" failures="0" 
+RealChainFilesE2ETest: tests="1" errors="0" skipped="0" failures="0" 

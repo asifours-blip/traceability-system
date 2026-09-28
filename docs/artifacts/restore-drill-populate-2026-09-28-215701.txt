@@ -1,0 +1,19 @@
+# RealChainBusinessFlowTest 2026-09-28 21:57:01 +0800：后端代码直连本地隔离链
+# JDK: openjdk version "21.0.12.1" 2026-08-18 LTS；合约地址: 0x24fa73a896a5e14c2e8856d60a4695197c146e58
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 5.241 s <<< FAILURE! -- in com.qhx.back.chain.RealChainBusinessFlowTest
+[ERROR] com.qhx.back.chain.RealChainBusinessFlowTest.真实链_指定交接_三阶段_消费者查询_读回公开文件 -- Time elapsed: 0.163 s <<< ERROR!
+[ERROR] Errors: 
+[ERROR]   RealChainBusinessFlowTest.真实链_指定交接_三阶段_消费者查询_读回公开文件:112->login:228 NullPointer Cannot invoke "cn.hutool.json.JSONObject.getStr(Object)" because the return value of "cn.hutool.json.JSONObject.getJSONObject(Object)" is null
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project back: 
+[ERROR] 
+[ERROR] See /home/tang/trace-e2e/back-me-build/back-me/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+RealChainBusinessFlowTest: tests="1" errors="1" skipped="0" failures="0" 

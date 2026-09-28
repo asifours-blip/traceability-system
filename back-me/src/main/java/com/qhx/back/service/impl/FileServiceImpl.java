@@ -340,7 +340,7 @@ public class FileServiceImpl implements FileService
         row.setTraceNumber(traceNumber);
         row.setStage(stage.code());
         row.setBoundKey(boundKey(traceNumber, stage));
-        row.setBindSource("REBUILD");
+        row.setBindSource("LEGACY_CHAIN_READ");
         row.setBoundAt(new Date());
         row.setUnpinned(false);
         row.setCreatedAt(new Date());

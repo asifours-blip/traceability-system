@@ -1,6 +1,7 @@
 package com.qhx.back.chain;
 
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.http.HttpRequest;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.qhx.back.support.FakeKubo;
@@ -106,9 +107,14 @@ class RealChainBusinessFlowTest {
             log("建号 " + u[0] + " " + u[1] + " roleState=" + created.getStr("roleState"));
             assertEquals("ALREADY_ON_CHAIN", created.getStr("roleState"));
         }
+        // outsider 每次运行都用新托管账户，不复用 smoke.json 里固定的 outsider 地址：
+        // 复用会导致上一轮已经在链上授过的 DISTRIBUTOR 角色留在同一个地址上，
+        // 这一轮再建号时角色状态变成 ALREADY_ON_CHAIN 而不是期望的 GRANTED_BY_TX，断言失败
+        String front = smoke().getJSONObject("meta").getStr("frontUrl");
+        String outsiderAddr = JSONUtil.parseObj(HttpRequest.get(front + "/privateKey?type=0&userName=outsider_" + run).execute().body()).getStr("address");
         // outsider 链上没有角色 → 真实发 addDistributor，回执确认后启用
         JSONObject outsider = perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON)
-                .content(userBody("o" + run, "DISTRIBUTOR", acc.getStr("outsider"))), admin, 200).getJSONObject("data");
+                .content(userBody("o" + run, "DISTRIBUTOR", outsiderAddr)), admin, 200).getJSONObject("data");
         log("建号 o" + run + " DISTRIBUTOR roleState=" + outsider.getStr("roleState") + " txId=" + outsider.getStr("roleTxId"));
         assertEquals("GRANTED_BY_TX", outsider.getStr("roleState"));
 

@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS file_object (
     stage              TINYINT      NULL COMMENT '绑定的阶段（BOUND 时有值）',
     bound_key          VARCHAR(160) NULL COMMENT 'BOUND 时为 {溯源号}:{阶段}，唯一：每个阶段最多一个已绑定文件',
     chain_tx_id        BIGINT       NULL COMMENT '确认该绑定的交易 chain_tx.id；重建时按链上数据绑定的旧文件为空',
-    bind_source        VARCHAR(16)  NULL COMMENT 'TX_CONFIRMED 交易确认后绑定 / REBUILD 重建读模型时按链上数据绑定',
+    bind_source        VARCHAR(32)  NULL COMMENT 'TX_CONFIRMED 交易确认后绑定 / LEGACY_CHAIN_READ 重建读模型时凭读链结果直接标记为已绑定（非正常交易路径）',
     bound_at           DATETIME     NULL COMMENT '绑定时间',
     orphaned_at        DATETIME     NULL COMMENT '标为孤儿的时间',
     unpinned           TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '孤儿文件是否已从本地 IPFS 取消 pin',

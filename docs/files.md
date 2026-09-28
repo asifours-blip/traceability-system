@@ -50,7 +50,7 @@ UPLOADED ──阶段交易 CONFIRMED，且读链得到的该阶段 CID 与记�
 - **占用**：提交生产 / 分销交易前，校验 CID 必须是当前账号上传、状态 UPLOADED、未被其他未决或已确认交易占用的记录（否则 400 字段错误），然后记下 `claim_trace_number / claim_stage`。同一内容可以上传多次，每次一条记录，一条记录只能绑定一个阶段。
 - **绑定**：`ChainTxService` 在交易进入 CONFIRMED 时（发交易拿到成功回执，或查证 `RECEIPT_CONFIRMED` / `STATE_CONFIRMED`）回调 `StageConfirmedHandler`：先读链刷新读模型，再用**读链得到的 CID**、签名账号、占用的溯源号与阶段找到那条 UPLOADED 记录，条件更新为 BOUND（`bound_key = 溯源号:阶段` 唯一）。`bindConfirmed` 自己再查一次数据库，交易不是 CONFIRMED 一律不绑定。
 - **FAILED / UNKNOWN 不绑定**：FAILED 的占用立即失效（可以拿去重新提交）；UNKNOWN 期间占用有效、不会被当成孤儿，查证为 CONFIRMED 时才绑定。回调失败（例如确认瞬间链读不到）只记日志，不影响交易结果；管理员重建读模型时补绑。
-- **旧文件**：本功能上线前写在链上的 CID 没有记录。重建读模型时从本地 IPFS 流式读出，按同样的类型与大小规则核对后登记为 BOUND（`bind_source=REBUILD`，`chain_tx_id` 为空，依据是读链结果）并 pin 住；本地没有的不登记。
+- **旧文件**：本功能上线前写在链上的 CID 没有记录。重建读模型时从本地 IPFS 流式读出，按同样的类型与大小规则核对后登记为 BOUND（`bind_source=LEGACY_CHAIN_READ`，`chain_tx_id` 为空，依据是读链结果）并 pin 住；本地没有的不登记。
 
 ## 清理策略
 

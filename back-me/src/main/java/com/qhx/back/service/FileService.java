@@ -36,7 +36,7 @@ public interface FileService
 
     /**
      * 重建读模型时按链上数据补齐绑定：已有占用且交易已确认的直接绑定；本系统没有记录的旧文件从本地 IPFS 读出、
-     * 按同样的类型与大小规则核对后登记为 BOUND（bind_source=REBUILD）。
+     * 按同样的类型与大小规则核对后登记为 BOUND（bind_source=LEGACY_CHAIN_READ）。
      *
      * @param writer 链上该阶段写入者对应的账号，可为 null
      */

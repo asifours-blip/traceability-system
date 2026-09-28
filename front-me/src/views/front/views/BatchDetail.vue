@@ -84,7 +84,7 @@
             <a v-else :href="fileUrl(stage)" target="_blank" rel="noopener"><i class="el-icon-document"></i> {{ fileOf(stage.key).fileName }}</a>
             <div class="file-meta">
               已绑定 · {{ fileOf(stage.key).mimeType }} · {{ sizeText(fileOf(stage.key).size) }}
-              <span v-if="fileOf(stage.key).bindSource === 'REBUILD'">（重建时从 IPFS 登记的旧文件）</span>
+              <span v-if="fileOf(stage.key).bindSource === 'LEGACY_CHAIN_READ'">（重建时从 IPFS 登记的旧文件）</span>
               <div class="mono">SHA-256 {{ fileOf(stage.key).sha256 }}</div>
               <div v-if="fileOf(stage.key).available === null" class="warn-text">{{ fileOf(stage.key).message }}</div>
             </div>

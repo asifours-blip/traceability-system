@@ -10,7 +10,8 @@
 - **联盟链存证**：关键字段写入 `Trace` 合约；角色由合约 `onlyProducer` / `onlyDistributor` / `onlyRetailer` 校验。后端另按账号角色鉴权（见「鉴权方式」）
 - **IPFS**：证书、检测报告先上传，链上存 CID（`IPFSServiceImpl` 返回 Base58 hash）
 - **IoT 看板**：`IotDataSimulatorTask` **每 5 分钟随机写入** 温湿度/光照到 MySQL，**不是真实传感器**
-- **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单）
+- **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单，只返回公开字段）
+- **批次归属与交接**：生产商建档时指定分销商，分销商指定零售商，只有被指定者能写下一阶段；业务字段逐项校验；链下只追加的更正。这些是**后端规则**，链上合约只强制角色、阶段顺序与每阶段只写一次，详见 [docs/business-flow.md](docs/business-flow.md)
 - **账号 + Bearer token**：用户名/密码（BCrypt）登录，服务端签发 256 位随机 token（库里只存 sha256）；交易签名地址取自服务端账号绑定的地址，客户端 `address` 头一律忽略
 - **离线测试门禁**：Mock `WeBaseClient`，Maven 单测不连链；前端 ESLint
 
@@ -104,9 +105,10 @@ cp application-local.yml.example application-local.yml
 ### 账号初始化
 
 ```bash
-# 1. 建账号表、会话表与交易记录表（库名与 MYSQL_DB 一致，默认 mysql；可重复执行）
+# 1. 建账号表、会话表、交易记录表与业务表（库名与 MYSQL_DB 一致，默认 mysql；可重复执行）
 mysql -u root -p mysql < back-me/src/main/resources/db/auth-schema.sql
 mysql -u root -p mysql < back-me/src/main/resources/db/chain-tx-schema.sql
+mysql -u root -p mysql < back-me/src/main/resources/db/business-schema.sql   # 批次归属、交接历史、更正、授权状态
 
 # 2. 首次启动时注入管理员（库里已有 ADMIN 时不会覆盖）
 export ADMIN_INITIAL_PASSWORD='<至少 8 位，自行生成>'
@@ -142,7 +144,7 @@ npm run lint
 
 ### 本地隔离链（真实 FISCO BCOS + WeBASE-Front，可选）
 
-在 WSL Ubuntu 中执行 `bash scripts/local-chain/run-all.sh`：搭 4 节点 FISCO BCOS 2.7.2 与 WeBASE-Front v1.5.5 副本（独立目录与端口，不碰原有链），部署 v2 合约，跑完整三阶段与越权/乱序/重复反例、共识停滞场景，并用后端代码直连同一条链。WeBASE-Front 接口契约与运行记录见 [docs/webase-front-contract.md](docs/webase-front-contract.md) 与 [docs/artifacts/](docs/artifacts/)。Postman 手工集合 11 条：[docs/artifacts/](docs/artifacts/)。**不是 Pytest，不是 60+。**
+在 WSL Ubuntu 中执行 `bash scripts/local-chain/run-all.sh`（加 `USE_OFFICIAL=1` 则不读本机原链目录，改从官方源下载并校验哈希，CI 手动 workflow 用的就是这种方式）：搭 4 节点 FISCO BCOS 2.7.2 与 WeBASE-Front v1.5.5 副本（独立目录与端口，不碰原有链），部署 v2 合约，跑完整三阶段与越权/乱序/重复反例、共识停滞场景，并用后端代码直连同一条链。WeBASE-Front 接口契约与运行记录见 [docs/webase-front-contract.md](docs/webase-front-contract.md) 与 [docs/artifacts/](docs/artifacts/)。Postman 手工集合 11 条：[docs/artifacts/](docs/artifacts/)。**不是 Pytest，不是 60+。**
 
 ## 智能合约
 
@@ -153,7 +155,7 @@ npm run lint
 - **流转**：严格按 生产 → 分销 → 零售 的顺序，每个阶段只能写一次；条目合约 `AgroFoodInfoItem` 只接受 `Trace` 写入，无法绕过角色与阶段检查
 - **旧合约**：早期部署（v1）的 setter 无访问控制、角色可自我扩散，这些漏洞在已部署的旧合约上仍然存在；v2 需要重新部署，旧数据不迁移。详见 [contracts/README.md](contracts/README.md)
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
-- **没有** `getAgroFoodListDetail`：`GET /trace/list` 对每个编号再打 3 次链查询（N+1），这是已知限制，不是「只查 3 条」的优化
+- **没有** `getAgroFoodListDetail`：原来的 `GET /trace/list` 对每个编号再打 3 次链查询（N+1）；现已删除，批次列表 `GET /batches` 只读数据库，详情再读链
 
 ## 鉴权方式（服务端账号 + Bearer token）
 
@@ -166,8 +168,9 @@ npm run lint
 | 交易先写 `chain_tx` 再发；回执 `status=0x0` 才算成功，超时/中断/5xx 记为 UNKNOWN 不自动重发，`POST /chain-tx/{id}/verify` 查证 | `ChainTxService`，见 [docs/tx-lifecycle.md](docs/tx-lifecycle.md) |
 | 无 token / 过期 / 已撤销 / 账号停用 → HTTP 401；角色不符 → HTTP 403 | `AddressInterceptor` + `@RequireRole` |
 | 生产/分销/零售写接口只允许对应角色；用户管理、系统信息写入只允许 ADMIN；合约 `onlyProducer` 等保留为第二道防线 | `TraceController` / `UserController` / `SystemInfoController` |
-| 免登录：`/login,/getSystemInfo,/trace/detail/**`（Ant 精确匹配） | `application.yml` → `allow.paths` |
-| 管理员新建账号时由**管理员地址**签名调用 `addX(address)`；停用账号时撤销其全部 token，并由管理员签名调用 `removeX(address)` | `UserAccountServiceImpl` |
+| 免登录：`/login,/getSystemInfo,/trace/detail/*,/trace/*/file/*`（Ant 精确匹配；详情只含公开字段，文件只能按链上绑定读取） | `application.yml` → `allow.paths` |
+| 批次读写按账号与批次的关系鉴权（生产商只碰自己建档的，分销商/零售商只碰指定给自己的），不靠前端隐藏按钮 | `BatchServiceImpl`，见 [docs/business-flow.md](docs/business-flow.md) |
+| 管理员新建账号：先读链上 `isX`，已有角色则不发交易；否则由**管理员地址**签名调用 `addX(address)`，结果未知时账号保持停用、查证后启用。停用账号时撤销其全部 token，并由管理员签名调用 `removeX(address)` | `UserAccountServiceImpl` |
 | 新用户的链上地址须是**已在 WeBASE-Front 托管私钥**的地址，由管理员填写（仓库未对接 WeBASE 私钥管理接口） | 用户管理页 |
 
 ## IoT 数据（定时模拟任务，非真实传感器）
@@ -181,6 +184,7 @@ npm run lint
 | Workflow | 作用 | 注意 |
 |----------|------|------|
 | `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 离线 `mvn -B test` + `npm run lint`；不连 FISCO/IPFS。默认分支 CI 以 Actions 为准。 |
+| `.github/workflows/local-chain-smoke.yml` | 手动触发（`workflow_dispatch`）：ubuntu 上 `USE_OFFICIAL=1 run-all.sh` | 下载只来自官方源并校验哈希；本地用 actionlint、`act -n` 与 WSL 里逐步执行核对过，**尚未在 GitHub Actions 上实际跑过**（本仓库不推送） |
 
 ## 仓库历史与命名
 
@@ -188,7 +192,7 @@ npm run lint
 
 ## 已知限制
 
-1. `/trace/list` N+1 链查询（合约没有批量详情接口）
+1. 「指定交接对象」是后端规则：持有分销商/零售商角色且能直接调用合约（或直接访问 WeBASE-Front）的账户可以绕开；上线前直接写在链上的历史批次没有归属记录，业务角色的列表里看不到
 2. 登录没有限流/锁定，token 为服务端会话（非 JWT），没有刷新机制；过期会话不会自动清理
 3. 地址合法性检查 `0x` + 40 位十六进制，无 EIP-55 checksum
 4. Solidity `^0.4.25`，未接 Foundry CI

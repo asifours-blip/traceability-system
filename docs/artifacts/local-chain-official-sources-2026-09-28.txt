@@ -1,0 +1,23 @@
+# 本地链冒烟（官方源模式）2026-09-28 ：USE_OFFICIAL=1 bash scripts/local-chain/run-all.sh，E2E_HOME=~/trace-e2e-ci（全新目录，JDK / OpenSSL / Maven 依赖全部重新下载）
+# 说明：本机 WSL 里没有 docker，WeBASE-Front 镜像在 Windows 侧按摘要 docker pull + docker cp 导出 /dist，经 FRONT_DIST_DIR 传入；脚本仍按清单 sha256 核对。GitHub Actions ubuntu runner 上由脚本自己 docker pull。
+# 冒烟 27 步 OK、0 步 FAIL（含 2/4 节点停止的共识停滞场景），明细见 local-chain-smoke-2026-09-28-official.md；Java 测试记录见 local-chain-java-test-2026-09-28-112202.txt
+
+[local-chain] FISCO BCOS 二进制与 build_chain.sh 已校验
+[local-chain] WeBASE-Front v1.5.5：程序来自 webasepro/webase-front@sha256:19d7d98ebc7942258459e060ab84c23068f09b56608d362b1b62cc4d3a9b3dd8（清单 09ffa325c1cad7d2b2eaa01fc88083d27456d5eff7f46ce163497e949bf0f430），脚本来自 b9267e7c0698bb69c9f1cab511daf974d9d405ce
+[local-chain] fetch-official 完成：FISCO_SRC=/home/tang/trace-e2e-ci/official
+[local-chain] 已停止
+[local-chain] 删除 /home/tang/trace-e2e-ci/nodes 与 /home/tang/trace-e2e-ci/webase-front
+[local-chain] OpenSSL: OpenSSL 1.1.1f  31 Mar 2020
+[local-chain] Java: openjdk version "11.0.32.1" 2026-08-18
+[local-chain] FISCO-BCOS Version : 2.7.2
+[local-chain] 已生成 4 节点：/home/tang/trace-e2e-ci/nodes
+[local-chain] WeBASE-Front v1.5.5 副本：/home/tang/trace-e2e-ci/webase-front
+[local-chain]   6:    url: jdbc:h2:file:./h2/webasefront;DB_CLOSE_ON_EXIT=FALSE
+[local-chain]   36:    port: 5672
+[local-chain]   52:  port: 5102
+[local-chain]   65:  channelPort: 20800
+[local-chain]   75:  nodePath: /home/tang/trace-e2e-ci/nodes/127.0.0.1/node0
+[local-chain] setup 完成
+[local-chain] 节点 RPC：{"id":1,"jsonrpc":"2.0","result":"0x0"}
+[local-chain] WeBASE-Front 就绪（9s）：http://127.0.0.1:5102/WeBASE-Front，块高 0
+[local-chain] RealChainSmokeTest RealChainBusinessFlowTest 在真实链上通过，记录：/mnt/d/Desktop/portfolio-repos/traceability-system/docs/artifacts/local-chain-java-test-2026-09-28-112202.txt

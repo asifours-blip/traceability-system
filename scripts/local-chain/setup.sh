@@ -4,6 +4,7 @@
 #
 # 只读取 $FISCO_SRC（原链目录）并复制文件，不在其中写任何东西。
 # 需要联网下载：Ubuntu 官方源的 OpenSSL 1.1.1f 包、Adoptium 的 Temurin 11，均校验 sha256。
+# FISCO_SRC 默认是本机原链目录；CI 里指向 fetch-official.sh 的输出（官方源 + 哈希校验）。
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 

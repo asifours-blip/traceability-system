@@ -1,0 +1,734 @@
+[
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
+    "name": "getDesignations",
+    "outputs": [
+      {
+        "name": "designatedDistributor",
+        "type": "address"
+      },
+      {
+        "name": "designatedRetailer",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
+    "name": "getStageActors",
+    "outputs": [
+      {
+        "name": "producer",
+        "type": "address"
+      },
+      {
+        "name": "distributor",
+        "type": "address"
+      },
+      {
+        "name": "retailer",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
+    "name": "getAgroFoodInfo",
+    "outputs": [
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "productName",
+        "type": "string"
+      },
+      {
+        "name": "productionLocation",
+        "type": "string"
+      },
+      {
+        "name": "variety",
+        "type": "string"
+      },
+      {
+        "name": "productionBatch",
+        "type": "string"
+      },
+      {
+        "name": "productionCert",
+        "type": "string"
+      },
+      {
+        "name": "productTime",
+        "type": "string"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "storageCondition",
+        "type": "string"
+      },
+      {
+        "name": "transportMethod",
+        "type": "string"
+      },
+      {
+        "name": "distributeBatch",
+        "type": "string"
+      },
+      {
+        "name": "storageLocation",
+        "type": "string"
+      },
+      {
+        "name": "distributePrice",
+        "type": "uint256"
+      },
+      {
+        "name": "distributeQuantity",
+        "type": "uint256"
+      },
+      {
+        "name": "inspectionReport",
+        "type": "string"
+      },
+      {
+        "name": "designatedRetailer",
+        "type": "address"
+      }
+    ],
+    "name": "addTraceInfoByDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeProducer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "productName",
+        "type": "string"
+      },
+      {
+        "name": "productionLocation",
+        "type": "string"
+      },
+      {
+        "name": "variety",
+        "type": "string"
+      },
+      {
+        "name": "productionBatch",
+        "type": "string"
+      },
+      {
+        "name": "productionCert",
+        "type": "string"
+      },
+      {
+        "name": "productTime",
+        "type": "string"
+      },
+      {
+        "name": "designatedDistributor",
+        "type": "address"
+      }
+    ],
+    "name": "newAgroFood",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "name": "newDistributor",
+        "type": "address"
+      }
+    ],
+    "name": "redesignateDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isRetailer",
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [],
+    "name": "renounceDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "getSystemInfo",
+    "outputs": [
+      {
+        "name": "",
+        "type": "string"
+      },
+      {
+        "name": "",
+        "type": "string"
+      },
+      {
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "removeRetailer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "addDistributor",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [],
+    "name": "clearSystemInfo",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "addRetailer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isDistributor",
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
+    "name": "getAgroFoodInfoByDistributor",
+    "outputs": [
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "storageCondition",
+        "type": "string"
+      },
+      {
+        "name": "transportMethod",
+        "type": "string"
+      },
+      {
+        "name": "distributeBatch",
+        "type": "string"
+      },
+      {
+        "name": "storageLocation",
+        "type": "string"
+      },
+      {
+        "name": "distributePrice",
+        "type": "uint256"
+      },
+      {
+        "name": "distributeQuantity",
+        "type": "uint256"
+      },
+      {
+        "name": "inspectionReport",
+        "type": "string"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "_name",
+        "type": "string"
+      },
+      {
+        "name": "_version",
+        "type": "string"
+      },
+      {
+        "name": "_description",
+        "type": "string"
+      }
+    ],
+    "name": "setSystemInfo",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      }
+    ],
+    "name": "getAgroFoodInfoByRetailer",
+    "outputs": [
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "salePrice",
+        "type": "uint256"
+      },
+      {
+        "name": "saleQuantity",
+        "type": "uint256"
+      },
+      {
+        "name": "shelfLife",
+        "type": "uint256"
+      },
+      {
+        "name": "invoiceNo",
+        "type": "string"
+      },
+      {
+        "name": "saleTime",
+        "type": "string"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [],
+    "name": "renounceRetailer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [],
+    "name": "getAgroFoodList",
+    "outputs": [
+      {
+        "name": "",
+        "type": "string[]"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "addProducer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "name": "companyName",
+        "type": "string"
+      },
+      {
+        "name": "salePrice",
+        "type": "uint256"
+      },
+      {
+        "name": "saleQuantity",
+        "type": "uint256"
+      },
+      {
+        "name": "shelfLife",
+        "type": "uint256"
+      },
+      {
+        "name": "invoiceNo",
+        "type": "string"
+      },
+      {
+        "name": "saleTime",
+        "type": "string"
+      }
+    ],
+    "name": "addTraceInfoByRetailer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "constant": true,
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "isProducer",
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "constant": false,
+    "inputs": [],
+    "name": "renounceProducer",
+    "outputs": [],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "name": "producer",
+        "type": "address"
+      },
+      {
+        "name": "distributor",
+        "type": "address"
+      },
+      {
+        "name": "retailer",
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "name": "stage",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "name": "actor",
+        "type": "address"
+      }
+    ],
+    "name": "TraceStageRecorded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "name": "traceNumber",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "name": "previousDistributor",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "name": "newDistributor",
+        "type": "address"
+      }
+    ],
+    "name": "DistributorRedesignated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "RetailerAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "RetailerRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "DistributorAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "DistributorRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "ProducerAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "ProducerRemoved",
+    "type": "event"
+  }
+]

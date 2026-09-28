@@ -70,4 +70,4 @@ jobs:
       - name: Check committed ABI is up to date
         run: |
           npm run abi
-          git diff --exit-code -- abi/Trace.json
+          git diff --exit-code -- abi/Trace.json abi/TraceV3.json

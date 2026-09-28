@@ -4,7 +4,7 @@
 //
 // 用法：
 //   node --stack-size=4000 scripts/compile.js               编译到 build/
-//   node --stack-size=4000 scripts/compile.js --write-abi   另外把 Trace 的 ABI 写到 abi/Trace.json
+//   node --stack-size=4000 scripts/compile.js --write-abi   另外把 Trace / TraceV3 的 ABI 写到 abi/
 // 环境变量：
 //   TRACE_SOURCES_DIR  源码目录，默认 contracts/（仅用于对旧合约跑对比测试）
 //   TRACE_BUILD_DIR    产物目录，默认 contracts/build
@@ -17,7 +17,7 @@ const solc = require("solc");
 const ROOT = path.resolve(__dirname, "..");
 const SOURCES_DIR = path.resolve(process.env.TRACE_SOURCES_DIR || ROOT);
 const BUILD_DIR = path.resolve(process.env.TRACE_BUILD_DIR || path.join(ROOT, "build"));
-const ENTRY = "Trace.sol";
+const ENTRY = process.env.TRACE_V3 === "1" ? "TraceV3.sol" : "Trace.sol";
 const EXPECTED_VERSION = "0.4.25";
 
 // 统一换行为 LF，保证 Windows 与 Linux 编译出的 metadata/bytecode 一致
@@ -28,11 +28,12 @@ function readSource(name) {
 function findImports(importPath) {
   // 源码只用 "./Xxx.sol" 形式的同目录导入
   const name = path.basename(importPath);
-  const file = path.join(SOURCES_DIR, name);
+  let file = path.join(SOURCES_DIR, name);
+  if (!fs.existsSync(file) && process.env.TRACE_V3 === "1") file = path.join(ROOT, name);
   if (!fs.existsSync(file)) {
     return { error: "File not found: " + importPath };
   }
-  return { contents: readSource(name) };
+  return { contents: fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n") };
 }
 
 function main() {
@@ -51,8 +52,8 @@ function main() {
     language: "Solidity",
     sources: { [ENTRY]: { content: readSource(ENTRY) } },
     settings: {
-      // 与 solc 0.4.25 默认值一致（WeBASE-Front 编译也不开优化器），只是显式写出来
-      optimizer: { enabled: false, runs: 200 },
+      // v2 保持默认关闭；v3 为满足 EVM 合约大小限制启用优化器。真实链部署须使用同一产物。
+      optimizer: { enabled: process.env.TRACE_V3 === "1", runs: 200 },
       evmVersion: "byzantium",
       outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
     },
@@ -83,11 +84,21 @@ function main() {
   console.log("solc " + version + "：" + SOURCES_DIR + " -> " + BUILD_DIR + "（" + written.join(", ") + "）");
 
   if (process.argv.includes("--write-abi")) {
-    const abi = output.contracts[ENTRY].Trace.abi;
-    const abiFile = path.join(ROOT, "abi", "Trace.json");
+    const name = process.env.TRACE_V3 === "1" ? "TraceV3" : "Trace";
+    const abi = output.contracts[ENTRY][name].abi;
+    const abiFile = path.join(ROOT, "abi", name + ".json");
     fs.writeFileSync(abiFile, JSON.stringify(abi, null, 2) + "\n");
     console.log("已写入 " + path.relative(ROOT, abiFile) + "（" + abi.length + " 项）");
   }
 }
 
 main();
+// 默认同时编译独立的 v3 合约；旧版对比只编译导出的 v1 源码。
+if (!process.env.TRACE_SOURCES_DIR && process.env.TRACE_V3 !== "1") {
+  const { spawnSync } = require("child_process");
+  const result = spawnSync(process.execPath, ["--stack-size=4000", __filename, ...process.argv.slice(2)], {
+    env: { ...process.env, TRACE_V3: "1", TRACE_SOURCES_DIR: path.join(ROOT, "v3") },
+    stdio: "inherit",
+  });
+  if (result.status !== 0) process.exit(result.status || 1);
+}

@@ -1,0 +1,19 @@
+# RealChainRestoreVerifyTest 2026-09-28 22:06:54 +0800：后端代码直连本地隔离链
+# JDK: openjdk version "21.0.12.1" 2026-08-18 LTS；合约地址: 0x24fa73a896a5e14c2e8856d60a4695197c146e58
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 6.691 s <<< FAILURE! -- in com.qhx.back.chain.RealChainRestoreVerifyTest
+[ERROR] com.qhx.back.chain.RealChainRestoreVerifyTest.恢复后批次_溯源号_文件CID对得上_消费者页能读回 -- Time elapsed: 1.481 s <<< FAILURE!
+[ERROR] Failures: 
+[ERROR]   RealChainRestoreVerifyTest.恢复后批次_溯源号_文件CID对得上_消费者页能读回:103 恢复出来的读模型不应该缺行：{"onChain":5,"rows":{"created":4,"updated":1,"unchanged":0},"removedStale":0,"claims":{"CLAIMED":4,"PARTIAL":0,"UNCLAIMED":1},"batchesBackfilled":3,"partnersBackfilled":0,"files":{"REJECTED":2,"MISSING":1,"IMPORTED":3,"ALREADY_BOUND":2},"errors":[],"elapsedMs":1258} ==> expected: <0> but was: <4>
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project back: There are test failures.
+[ERROR] 
+[ERROR] See /home/tang/trace-e2e/back-me-build/back-me/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+RealChainRestoreVerifyTest: tests="1" errors="0" skipped="0" failures="1" 

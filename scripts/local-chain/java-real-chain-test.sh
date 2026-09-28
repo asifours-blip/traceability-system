@@ -40,7 +40,7 @@ out="$REPO_ROOT/docs/artifacts/${E2E_OUT_PREFIX:-local-chain-java-test}-$(date +
   # MyBatis 的 SQL 日志里有 ERROR_REASON 列名，用 grep -v 去掉
   JAVA_HOME="$JDK21_HOME" E2E_SMOKE_FILE="$E2E_HOME/last-smoke.json" \
     "$MAVEN_HOME_E2E/bin/mvn" -B -q -C -Dmaven.repo.local="$E2E_HOME/m2" -Dtest="${tests// /,}" -Dsurefire.failIfNoSpecifiedTests=false test \
-    | grep -E '^\[(real-chain(-flow)?|files-e2e)\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
+    | grep -E '^\[(real-chain(-flow)?|files-e2e|restore-verify)\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
   for t in $tests; do
     report="target/surefire-reports/TEST-com.qhx.back.chain.$t.xml"
     [[ -f "$report" ]] && echo "$t: $(grep -o 'tests="[0-9]*"\|failures="[0-9]*"\|errors="[0-9]*"\|skipped="[0-9]*"' "$report" | head -4 | tr '\n' ' ')"

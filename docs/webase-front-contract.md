@@ -12,6 +12,15 @@
 
 二进制与发行包复制自用户原有目录 `GraduationDesign/fisco-chain`（只读），原链未改动。搭链方法见文末「复现」。
 
+**本文的契约核验用的是本机这份 v1.5.5 的 jar/发行包**（`scripts/local-chain/setup.sh` 默认从 `FISCO_SRC` 读取，见 `env.sh`）。
+CI（`.github/workflows/local-chain-smoke.yml`，`USE_OFFICIAL=1`）用的不是这一份，而是 `scripts/local-chain/fetch-official.sh`
+从 WeBASE 官方 Docker Hub 镜像 `webasepro/webase-front@sha256:19d7d98ebc7942258459e060ab84c23068f09b56608d362b1b62cc4d3a9b3dd8`
+（按摘要锁定，非 tag）里 `docker cp` 出来的 `/dist`（`apps/`、`lib/`、`conf/`），再按清单 sha256 核对完整性。
+**两者不是同一次构建**（本机是历史上某次官方发行包的本地留存，CI 是按固定摘要现拉的镜像内容），只是碰巧版本号都是
+v1.5.5；本文档的结论是在本机这份 jar 上核验的，CI 跑的是 `scripts/local-chain/smoke.py` 的冒烟场景（角色、三阶段、
+反例、共识停滞），两边跑下来结果一致，但这只说明"两份 v1.5.5 在这些场景下行为一致"，不能倒推成"文档结论对任意
+WeBASE-Front v1.5.5 构建都成立"。
+
 核验记录：[`docs/artifacts/local-chain-smoke-2026-09-28.md`](artifacts/local-chain-smoke-2026-09-28.md)（27 步，含全部回执摘要）、[`local-chain-java-test-2026-09-28.txt`](artifacts/local-chain-java-test-2026-09-28.txt)（后端 `HttpUtil` / `StageProbe` 直连同一条链）。为理解响应来源，另外用 `javap` 只读查看了发行包 jar 的请求实体与异常处理（`ReqTransHandle`、`ExceptionsHandler`），但**判定规则只以真实响应为准**。
 
 ## `POST /WeBASE-Front/trans/handle`

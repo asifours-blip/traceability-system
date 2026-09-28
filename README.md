@@ -163,12 +163,23 @@ npm run lint
 | 批次读写按账号与批次的关系鉴权（生产商只碰自己建档的，分销商/零售商只碰指定给自己的），不靠前端隐藏按钮 | `BatchServiceImpl`，见 [docs/business-flow.md](docs/business-flow.md) |
 | 管理员新建账号：先读链上 `isX`，已有角色则不发交易；否则由**管理员地址**签名调用 `addX(address)`，结果未知时账号保持停用、查证后启用。停用账号时撤销其全部 token，并由管理员签名调用 `removeX(address)` | `UserAccountServiceImpl` |
 | 新用户的链上地址须是**已在 WeBASE-Front 托管私钥**的地址，由管理员填写（仓库未对接 WeBASE 私钥管理接口） | 用户管理页 |
+| 登录限流：按「账号 + IP」统计失败次数，滑动窗口内达到阈值（默认 5 次/300 秒）即锁定（默认 60 秒），返回 429 + `Retry-After`；登录成功清零 | `LoginRateLimiterImpl`，见 `back-me/src/test/java/com/qhx/back/auth/LoginRateLimitTest.java` |
 
 ## IoT 数据（定时模拟任务，非真实传感器）
 
 `IotDataSimulatorTask` 固定批次 `SY60202600001~3`，在量程内随机生成温度 15–35℃、湿度 30–90%、光照 0–1000 lux，每 5 分钟调用 `IotSensorDataService.save`。看板读这张 MySQL 表。
 
 写入校验在 `IotSensorDataServiceImpl.save`（`IotSensorValidator`）：缺 `batchId`、空单位、温度/湿度/光照超量程会拒绝。模拟任务本身只生成合法数据，**不是**「所有 MyBatis-Plus 写入入口」的全局闸（`saveBatch` / `mapper.insert` 不走 `save()`）。
+
+## 验证状态（三档）
+
+不是所有声明的分量都一样：下面按验证方式分三档，越往下越接近真实部署，但也越少被跑过。
+
+**第一档：已实现并通过隔离验证**（`mvn -B test` / `npm run lint`，Mock WeBASE、Mock/Fake kubo、H2 内存库，不连任何外部服务，CI `ci.yml` 每次跑）——三角色流转、字段校验、批次归属与交接、链下更正、账号鉴权与登录限流、文件上传/绑定/孤儿清理、读模型分页查询，见各自的单测类与 [docs/test_report.md](docs/test_report.md)。
+
+**第二档：已在本地真实链和 IPFS 上验证**（`scripts/local-chain/` 搭的隔离 FISCO BCOS 2.7.2 + WeBASE-Front v1.5.5，本机真实 kubo，手动执行，未进 CI 常规流程）——合约部署、三阶段真实上链与越权/共识停滞反例、文件经真实 kubo 上传/pin/GC/读模型重建、MySQL 备份恢复演练（批次/溯源号/文件 CID 三者对得上，消费者页能读回）。记录见 [docs/artifacts/](docs/artifacts/)、[docs/webase-front-contract.md](docs/webase-front-contract.md)、[docs/backup-restore.md](docs/backup-restore.md)。CI 的 `local-chain-smoke.yml` 跑的是同一套脚本但换成官方 Docker 镜像拉取的 WeBASE-Front（按摘要锁定，不是本机这份 jar 的同一次构建，见 [docs/webase-front-contract.md](docs/webase-front-contract.md)）。
+
+**第三档：需要正式联盟链才能验证，本仓库没有做**——多机构真实节点间的网络分区与拜占庭场景；生产规模的 MySQL 主从/多可用区；kubo 集群或对象存储替代单机仓库；合约 v3（链上强制交接对象，见 [contracts/README.md](contracts/README.md) 的设计说明，未实现）；任何需要真实资金/真实身份的场景。
 
 ## CI
 
@@ -183,10 +194,11 @@ npm run lint
 
 ## 已知限制
 
-1. 「指定交接对象」是后端规则：持有分销商/零售商角色且能直接调用合约（或直接访问 WeBASE-Front）的账户可以绕开；上线前直接写在链上的历史批次没有归属记录，业务角色的列表里看不到
-2. 登录没有限流/锁定，token 为服务端会话（非 JWT），没有刷新机制；过期会话不会自动清理
+1. 「指定交接对象」是后端规则：持有分销商/零售商角色且能直接调用合约（或直接访问 WeBASE-Front）的账户可以绕开合约本身没有强制；上线前直接写在链上的历史批次没有归属记录，业务角色的列表里看不到。这些旧文件在重建读模型时凭读链结果直接标记为已绑定（`file_object.bind_source=LEGACY_CHAIN_READ`），和走正常交易绑定的文件（`TX_CONFIRMED`）区分开，批次详情页会标出来
+2. 登录已按账号 + IP 限流（见上表），但 token 仍是服务端会话（非 JWT），没有刷新机制；过期会话不会自动清理；没有 MFA、密码修改与找回
 3. 地址合法性检查 `0x` + 40 位十六进制，无 EIP-55 checksum
 4. Solidity `^0.4.25`，未接 Foundry CI
 5. CORS 只在 `WebConfig` 放行 `localhost` / `127.0.0.1`（已去掉 `*` + Credentials；拦截器不再写 CORS 头）
+6. 备份/恢复：MySQL 是单次快照（`mysqldump --single-transaction`），没有 binlog 增量，恢复点是最近一次备份完成的时刻；kubo 物理备份要求备份前停止守护进程，短暂不可写；详见 [docs/backup-restore.md](docs/backup-restore.md)
 
 生产边界、身份认证剩余缺口、以及依赖/合约测试的整改优先级见 [docs/production-boundaries.md](docs/production-boundaries.md)。

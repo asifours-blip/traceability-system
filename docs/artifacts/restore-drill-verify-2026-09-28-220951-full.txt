@@ -1,0 +1,7 @@
+# RealChainRestoreVerifyTest 完整输出（java-real-chain-test.sh 的 grep 过滤规则里没有 [restore-verify] 前缀，
+# 上面同名不带 -full 的文件只留了 Tests run 汇总；这份是同一次运行手动加宽过滤后的完整输出，用于核对细节）
+[restore-verify] 校验批次 RC3934807（恢复出来的 MySQL=jdbc:mysql://127.0.0.1:13307/trace_it_drill?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai kubo=http://127.0.0.1:5202）
+[restore-verify] 恢复库直接读消费者公开视图（重建读模型之前）：producer={"companyName":"烟台果园","productName":"苹果","productionLocation":"山东烟台","variety":"红富士","productionBatch":"B-3934807","productTime":"2026-09-20","timestamp":1790603936770,"hasFile":true,"fileState":"AVAILABLE","fileType":"image/png"}
+[restore-verify] 文件读回（恢复库 + 恢复 kubo）：24 字节，与备份前一致
+[restore-verify] 重建读模型（恢复库，含这条链上的历史批次）：{"onChain":5,"rows":{"created":0,"updated":0,"unchanged":5},"removedStale":0,"claims":{"CLAIMED":4,"PARTIAL":0,"UNCLAIMED":1},"batchesBackfilled":0,"partnersBackfilled":0,"files":{"REJECTED":2,"MISSING":1,"ALREADY_BOUND":5},"errors":[],"elapsedMs":470}
+[restore-verify] 重建读模型后再读一次消费者公开视图：不变，批次/溯源号/文件 CID 三者对得上

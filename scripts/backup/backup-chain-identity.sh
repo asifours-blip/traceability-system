@@ -26,10 +26,16 @@ out="$BACKUP_DIR/chain-identity/identity-${stamp}.json"
 contract_address="null"
 group_id="null"
 front_url="null"
+# 用 grep/sed 取值，不依赖 python3（Windows Git Bash 下未必有；本机 smoke.json 结构固定，字段名不重复出现在别处的风险很低）
+json_str_field() { grep -m1 "\"$2\"[[:space:]]*:" "$1" | sed -E 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/'; }
+json_num_field() { grep -m1 "\"$2\"[[:space:]]*:" "$1" | sed -E 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/'; }
 if [[ -n "$smoke_json" && -f "$smoke_json" ]]; then
-  contract_address="$(python3 -c "import json;print(json.load(open('$smoke_json'))['contractAddress'])" 2>/dev/null || echo null)"
-  group_id="$(python3 -c "import json;print(json.load(open('$smoke_json'))['meta']['groupId'])" 2>/dev/null || echo null)"
-  front_url="$(python3 -c "import json;print(json.load(open('$smoke_json'))['meta']['frontUrl'])" 2>/dev/null || echo null)"
+  contract_address="$(json_str_field "$smoke_json" contractAddress)"
+  group_id="$(json_num_field "$smoke_json" groupId)"
+  front_url="$(json_str_field "$smoke_json" frontUrl)"
+  [[ -n "$contract_address" ]] || contract_address="null"
+  [[ -n "$group_id" ]] || group_id="null"
+  [[ -n "$front_url" ]] || front_url="null"
 else
   log "没有传入 smoke json，也没在 docs/artifacts 下找到 local-chain-smoke-*.json：contractAddress/groupId 记为 null，请手动补充"
 fi

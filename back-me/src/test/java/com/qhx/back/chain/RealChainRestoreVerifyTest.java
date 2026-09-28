@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -94,27 +95,33 @@ class RealChainRestoreVerifyTest {
         byte[] expectedCert = png("cert-" + run);
         log("校验批次 " + tn + "（恢复出来的 MySQL=" + System.getenv("E2E_MYSQL_URL") + " kubo=" + System.getenv("E2E_IPFS_API_URL") + "）");
 
-        // 管理员在恢复库里已存在（AdminBootstrap 只在没有 ADMIN 时才建号），直接登录
-        String admin = login("admin");
-
-        // 读模型重建：全部从链上重新核对一遍，恢复出来的 MySQL 应该已经和链上一致（幂等，created/updated 都是 0）
-        JSONObject rebuild = perform(post("/admin/read-model/rebuild"), admin, 200).getJSONObject("data");
-        log("重建读模型（恢复库）：" + rebuild);
-        assertEquals(0, rebuild.getJSONObject("rows").getInt("created"), "恢复出来的读模型不应该缺行：" + rebuild);
-        assertEquals(0, rebuild.getJSONObject("rows").getInt("updated"), "恢复出来的读模型不应该跟链上对不上：" + rebuild);
-
-        // 消费者公开视图：批次、溯源号能查到，字段与生产时一致
-        MvcResult pubRes = mvc.perform(get("/trace/detail/" + tn)).andReturn();
-        assertEquals(200, pubRes.getResponse().getStatus(), pubRes.getResponse().getContentAsString());
-        JSONObject pub = JSONUtil.parseObj(pubRes.getResponse().getContentAsString(StandardCharsets.UTF_8)).getJSONObject("data");
+        // 消费者公开视图：只凭恢复出来的 MySQL（读模型不读链），批次、溯源号能查到，字段与生产时一致
+        JSONObject pub = publicDetail(tn);
         assertEquals("苹果", pub.getJSONObject("producer").getStr("productName"));
-        log("消费者公开视图（恢复库）：producer=" + pub.getJSONObject("producer"));
+        log("恢复库直接读消费者公开视图（重建读模型之前）：producer=" + pub.getJSONObject("producer"));
 
         // 文件 CID：恢复出来的 kubo 里还能读到同一个 CID 的同一份内容，字节级一致
         MvcResult file = mvc.perform(get("/trace/" + tn + "/file/production")).andReturn();
         assertEquals(200, file.getResponse().getStatus());
         assertArrayEquals(expectedCert, file.getResponse().getContentAsByteArray(), "恢复出来的 kubo 里文件内容必须和备份前字节一致");
         log("文件读回（恢复库 + 恢复 kubo）：" + file.getResponse().getContentAsByteArray().length + " 字节，与备份前一致");
+
+        // 读模型重建：这条本地链上还有本次演练之外、更早的历史批次（其它阶段测试留下的），
+        // 重建会把它们也一并建进这个全新的库，所以不能断言 created==0；只断言没有错误，
+        // 并且重建前后我们这条批次的公开视图不变（证明重建没有把已经对得上的数据搞坏）
+        String admin = login("admin");
+        JSONObject rebuild = perform(post("/admin/read-model/rebuild"), admin, 200).getJSONObject("data");
+        log("重建读模型（恢复库，含这条链上的历史批次）：" + rebuild);
+        assertTrue(rebuild.getJSONArray("errors").isEmpty(), "重建读模型不应该报错：" + rebuild);
+        JSONObject pubAfter = publicDetail(tn);
+        assertEquals(pub.toString(), pubAfter.toString(), "重建读模型前后，这条批次的消费者视图应该完全一致");
+        log("重建读模型后再读一次消费者公开视图：不变，批次/溯源号/文件 CID 三者对得上");
+    }
+
+    private JSONObject publicDetail(String tn) throws Exception {
+        MvcResult res = mvc.perform(get("/trace/detail/" + tn)).andReturn();
+        assertEquals(200, res.getResponse().getStatus(), res.getResponse().getContentAsString());
+        return JSONUtil.parseObj(res.getResponse().getContentAsString(StandardCharsets.UTF_8)).getJSONObject("data");
     }
 
     private static byte[] png(String tag) {

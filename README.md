@@ -1,94 +1,67 @@
 # 农产品溯源系统
 
-农产品从生产、分销到零售，批次资料、交接记录和检测文件往往分散在不同环节。本项目把三方操作与消费者查询连接起来：参与方按批次记录流转，消费者通过溯源号或二维码查看公开信息及对应文件。
+一个基于联盟链的农产品溯源平台：生产商、分销商、零售商按批次记录各自环节，消费者扫码就能看到这批货从哪里来、经过了谁、有没有检测报告。
 
-流转记录写入 FISCO BCOS 联盟链，文件存入 IPFS，账号、查询读模型和模拟环境数据保存在 MySQL；后端通过 WeBASE-Front 调用合约。
-
-## 使用流程
+流转记录写在 FISCO BCOS 联盟链上，检测报告等文件存进 IPFS，账号和查询数据放在 MySQL。
 
 ```mermaid
 flowchart LR
-    A[生产商建档与上传检测文件] --> B[指定分销商接收并记录]
-    B --> C[指定零售商记录]
+    A[生产商建档<br/>上传检测报告<br/>指定分销商] --> B[分销商记录<br/>指定零售商]
+    B --> C[零售商记录]
     C --> D[消费者扫码查询]
-    A --> E[链上流转与文件标识]
-    B --> E
-    C --> E
-    F[IPFS 文件] --> D
-    E --> G[MySQL 查询读模型]
-    G --> D
+    A & B & C -. 写入 .-> E[(联盟链)]
+    A -. 文件 .-> F[(IPFS)]
+    E & F --> D
 ```
 
-## 它能做什么
+## 从毕业设计到重新设计
 
-- **按批次协作**：生产商建档并指定分销商，分销商再指定零售商；页面展示阶段、交接和更正记录。
-- **查询来源**：消费者通过溯源号或二维码查看公开流转信息及绑定文件，业务账号只操作与自己有关的批次。
-- **管理文件**：上传证书与报告，校验类型、大小及内容哈希；交易确认后文件才能绑定和公开读取。
-- **处理异常**：交易结果未知时先查证，显示确认、失败或待核查状态；文件丢失时明确提示。
-- **维护数据**：管理员管理账号、重建查询读模型，并按手册备份恢复数据库与文件；IoT 看板使用模拟数据。
+这个项目最初是我的毕业设计。答辩之后回头审查时，我发现它的安全模型有几处根本性问题：
 
-## 工程取舍
+- 登录只检查"这个链上地址有没有角色"，不需要任何密码，知道别人的地址就能冒充对方；
+- 注册接口不需要登录，任何人都能给自己授予生产商角色；
+- 智能合约里存储溯源数据的条目合约，写入方法对所有人开放，绕过后端直接调用就能改写别人的记录。
 
-| 问题 | 处理方式 | 可核查位置 |
-| --- | --- | --- |
-| 客户端地址不能证明调用者身份 | 服务端账号与 Bearer 会话确定身份，签名地址来自账号绑定；客户端地址头不参与身份判断 | [认证实现](back-me/src/main/java/com/qhx/back/service/impl/AuthServiceImpl.java) · [认证回归](back-me/src/test/java/com/qhx/back/auth/AuthIntegrationTest.java) |
-| 仅靠后端限制交接可以被直接写链绕过 | v3 合约强制指定交接对象；旧 v2 批次保留原部署绑定，不把新保护追溯宣称为旧版本能力 | [合约说明](contracts/README.md) · [隔离链证据](docs/artifacts/README.md) |
-| 超时后直接重发可能重复上链 | 发送前保存交易意图；未知结果通过回执或读链查证，再决定是否允许显式重提 | [交易生命周期](docs/tx-lifecycle.md) · [接口契约](docs/webase-front-contract.md) |
-| 文件上传成功不等于已进入业务记录 | 流式上传、SHA-256 与 CID 读回校验；只在交易确认后绑定，未绑定文件按规则清理 | [文件机制](docs/files.md) · [文件测试](back-me/src/test/java/com/qhx/back/) |
-| 批次列表逐条读链造成重复查询 | 分页读取数据库读模型，提供从链上重建与历史归属回填，保留数据来源区别 | [查询设计](docs/read-model.md) |
-| 数据库恢复不能单独恢复完整业务 | 备份记录数据库、kubo 与链上标识的对应关系，恢复后核对批次、CID 与消费者视图 | [恢复手册](docs/backup-restore.md) · [原始记录](docs/artifacts/README.md) |
+于是我把信任模型整体重做了一遍，下面几个设计都来自这次重构。原合约的漏洞如实记录在[合约说明](contracts/README.md)里；我用同一套测试分别跑新旧两版合约，逐项对比，证明这些攻击在新合约上都会被拒绝。
+
+## 几个值得一说的设计
+
+**身份由服务端决定，链上权限只认合约。** 用户用账号密码登录，服务端签发令牌，发交易时的签名地址只能取自账号绑定的地址。合约这边，角色只能由管理员授予和撤销，条目合约只接受主合约写入，生产 → 分销 → 零售必须按顺序进行，每个阶段只能写一次。
+
+**交接对象写在链上。** 生产商建档时就在链上指定下游分销商，只有被指定的分销商才能写分销环节。我在本地隔离链上实际测过：一个有分销商角色、但没被指定的账户，绕过后端直接调用合约，会被链拒绝（[运行记录](docs/artifacts/README.md)）。
+
+**交易结果不确定时，不盲目重发。** 发交易之前先记下这次的意图；遇到超时，就通过交易回执或读链来确认它到底有没有上链，然后再决定是否允许重新提交。WeBASE-Front 在各种情况下的实际返回，都在真实链上逐条核对过（[接口契约](docs/webase-front-contract.md)）。
+
+**文件要等上链成功才算数。** 检测报告以流式方式上传，服务端计算哈希并与 IPFS 返回的地址核对；只有等对应的交易确认之后，文件才会绑定到批次、对外公开。一直没被使用的文件会定期清理。
+
+**查询不用每次都读链。** 列表和消费者查询读的是 MySQL 里的查询副本，这份副本随时可以从链上完整重建，重建过程是幂等的。
 
 ## 技术栈
 
-| 层 | 实现 |
-| --- | --- |
-| 应用 | Spring Boot、MyBatis-Plus、Vue 2、Element UI |
-| 链与文件 | FISCO BCOS、WeBASE-Front、Solidity、IPFS kubo |
-| 数据与检查 | MySQL、Maven / JUnit、Hardhat、ESLint |
+Spring Boot · MyBatis-Plus · Vue 2 + Element UI · Solidity · FISCO BCOS + WeBASE-Front · IPFS（kubo） · MySQL · JUnit / Hardhat · GitHub Actions
 
-## 快速开始
+## 本地运行
 
-先运行不连接链、MySQL 或 IPFS 的后端测试，检查本地构建环境。使用与 CI 相同的 JDK 21；编译目标为 Java 14，并非 JDK 8。依赖首次下载需要网络。
+后端测试和前端构建不需要连接链、数据库或 IPFS（JDK 21、Node 16）：
 
 ```bash
-cd back-me
-mvn -B test
-cd ../front-me
-npm ci
-npm run lint
-npm run build
+cd back-me && mvn -B test
+cd ../front-me && npm ci && npm run build
+cd ../contracts && npm ci && npm test
 ```
 
-前端沿用 Node 16 工具链。以上检查不启动完整业务系统；登录与流转需要 MySQL、WeBASE-Front 和文件服务。账号初始化、配置及隔离链搭建步骤见[运行参考](docs/reference.md#快速开始)，不要将无外部服务的单测视为整套应用已启动。
-
-## 验证状态
-
-截至代码提交 [`61a7d17`](https://github.com/asifours-blip/traceability-system/commit/61a7d17dcd5b2b72bd8ab9ffa2637d2b8848418f)，[CI 36456705657](https://github.com/asifours-blip/traceability-system/actions/runs/36456705657) 成功：执行后端默认测试、前端 lint、合约测试与 ABI 一致性检查。条件跳过的集成测试不算执行通过；前端构建是已有本地记录，尚未加入默认 CI。
-
-[运行产物索引](docs/artifacts/README.md)将隔离链、MySQL、文件与恢复演练分开记录。v3 后端分流验证连接真实本地链与 WeBASE-Front，但使用 H2 和 FakeKubo；不能由此推出 v3 与真实 MySQL / IPFS 的完整业务联调已完成。
+完整运行需要 MySQL、WeBASE-Front 和 IPFS，部署步骤以及本地隔离链的搭建脚本见[运行参考](docs/reference.md)。
 
 ## 文档
 
-| 文档 | 内容 |
-| --- | --- |
-| [架构](docs/architecture.md) | 链上、链下与应用的职责 |
-| [业务流程](docs/business-flow.md) | 批次归属、交接、更正与公开字段 |
-| [合约](contracts/README.md) | 版本、角色、阶段约束与迁移边界 |
-| [交易生命周期](docs/tx-lifecycle.md) | 意图、回执、未知结果与查证 |
-| [接口契约](docs/webase-front-contract.md) | 已核验的 WeBASE-Front 响应与错误 |
-| [文件](docs/files.md) · [读模型](docs/read-model.md) | 上传绑定、公开读取、分页与重建 |
-| [备份恢复](docs/backup-restore.md) | 数据库、文件与链上标识的恢复步骤 |
-| [测试记录](docs/test_report.md) · [产物索引](docs/artifacts/README.md) | 分日期、环境查看通过、失败及跳过 |
-| [运行参考](docs/reference.md) | 完整配置、初始化、命令、技术细节与历史验证 |
-| [部署边界](docs/production-boundaries.md) | 身份、依赖与正式部署前的待办 |
+- [系统架构](docs/architecture.md)、[业务流程](docs/business-flow.md)、[合约说明](contracts/README.md)
+- [交易生命周期](docs/tx-lifecycle.md)、[文件机制](docs/files.md)、[查询读模型](docs/read-model.md)
+- [备份恢复](docs/backup-restore.md)、[测试记录](docs/test_report.md)、[运行产物索引](docs/artifacts/README.md)
+- [正式部署前的待办](docs/production-boundaries.md)
 
-## 局限
+## 目前的边界
 
-- 链上记录不能证明录入信息本身真实；IoT 数据为定时模拟值，尚未接入真实设备。
-- 旧 v2 批次不具备 v3 的链上指定交接保护；历史多部署地址的自动路由尚未实现。
-- 私钥托管在 WeBASE-Front，登录限流仅约束单个实例；密码找回、MFA 与跨实例限流未实现。
-- 本地链和恢复演练不代表多机构联盟链或正式部署验收；依赖升级、完整 v3 存储联调等见[部署边界](docs/production-boundaries.md)。
-
-## 仓库历史
-
-项目起于农产品溯源毕业设计，保留原目录与包名。后续补充服务端身份、交易生命周期、文件校验与 v3 交接约束；初次完整导入不表示线上迭代周期。
+- 链上记录能保证数据写入后不被篡改，但不能保证录入的内容本身是真的。
+- 旧版合约上已有的批次，仍然只有后端校验交接对象；IoT 看板使用的是模拟数据。
+- 私钥托管在 WeBASE-Front 上；登录限流只在单个实例内生效。
+- 所有验证都在本地隔离链上完成，没有在多机构的正式联盟链上部署过。

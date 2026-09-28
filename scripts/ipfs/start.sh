@@ -12,11 +12,15 @@ fi
 bin_win="$TRACE_IPFS_HOME_WIN\\bin\\ipfs.exe"
 stamp="$(date +%Y%m%d-%H%M%S)"
 # --offline：不连任何节点；--enable-gc 不开，垃圾回收只按 docs/files.md 的策略显式执行
-powershell.exe -NoProfile -NonInteractive -Command \
-  "Start-Process -WindowStyle Hidden -FilePath '$bin_win' \
-   -ArgumentList '--repo-dir','$REPO_WIN','daemon','--offline' \
-   -RedirectStandardOutput '$LOG_DIR_WIN\\daemon-$stamp.out' -RedirectStandardError '$LOG_DIR_WIN\\daemon-$stamp.err'" \
-  || die "启动 ipfs.exe 失败"
+launch=(powershell.exe -NoProfile -NonInteractive -Command
+  "Start-Process -WindowStyle Hidden -FilePath '$bin_win' -ArgumentList '--repo-dir','$REPO_WIN','daemon','--offline' -RedirectStandardOutput '$LOG_DIR_WIN\\daemon-$stamp.out' -RedirectStandardError '$LOG_DIR_WIN\\daemon-$stamp.err'")
+if [[ "$IPFS_ENV" == "wsl" ]]; then
+  # WSL interop 会一直等到子进程树释放句柄才返回（守护进程常驻，永远不返回）：放到后台、不继承终端，靠下面轮询 API 判断是否就绪
+  setsid nohup "${launch[@]}" </dev/null >/dev/null 2>&1 &
+  disown || true
+else
+  "${launch[@]}" || die "启动 ipfs.exe 失败"
+fi
 
 for i in $(seq 1 30); do
   if api_up; then

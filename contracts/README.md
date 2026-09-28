@@ -163,3 +163,32 @@ npm run test:legacy # 对 v1 源码跑同一套测试（需要完整 git 历史�
 ## 调用路径
 
 应用不使用 FISCO Java SDK。`HttpUtil` POST 到 WeBASE-Front，body 带 `contractName=Trace`、`contractAddress`、`contractAbi`、`user`（链上身份）、`funcName`、`funcParam`。
+
+## v3 设计（未实现，只是设计文档）
+
+**现状**：「只有被指定的分销商/零售商能写下一阶段」目前只在后端强制（`BatchServiceImpl` 按 `trace_batch.distributor_id` / `retailer_id` 校验），合约层面只检查角色（`onlyDistributor` / `onlyRetailer`），不检查是不是**被指定的那一个**。持有对应角色的账户只要绕过后端、直接经 WeBASE-Front（或任何能访问它的调用方）调合约，就能给任意批次写下一阶段——`docs/business-flow.md` 里 `RealChainBusinessFlowTest` 的 outsider 场景就是在演示这一点：outsider 在链上确实有分销商角色，合约会接受它的写入，是后端把它拒了。
+
+**目标**：把这条规则挪到链上强制，去掉「后端是唯一防线」这个前提。
+
+### 存储与接口变化
+
+- `AgroFoodInfoItem` 每条记录新增两个字段：`address designatedDistributor`、`address designatedRetailer`。
+- `Trace.newAgroFood(...)` 新增一个参数 `address designatedDistributor`（生产时必须指定，不能是 0 地址——与后端现有规则「生产建档必须指定下游分销商」一致）。
+- 新增 `Trace.redesignateDistributor(string traceNumber, address newDistributor)`：仅限该批次的生产者本人调用，且只在分销阶段尚未写入时允许（对应后端现在 `trace_assignment_log` 记录的「分销前可改派」）。每次改派触发一个事件，替代目前只在 MySQL 里留痕的做法。
+- `Trace.addTraceInfoByDistributor(...)` 新增参数 `address designatedRetailer`（分销时必须指定零售商，同上）；执行时除了 `onlyDistributor`，还要 `require(msg.sender == designatedDistributor)`。
+- `Trace.addTraceInfoByRetailer(...)` 执行时除了 `onlyRetailer`，还要 `require(msg.sender == designatedRetailer)`。
+- 新增 revert 文本：`Trace: caller is not the designated distributor` / `Trace: caller is not the designated retailer`。
+- `getStageActors` 之外新增 `getDesignations(string traceNumber) returns (address designatedDistributor, address designatedRetailer)`，供后端核对链上指定与 MySQL 台账是否一致。
+
+### 和 v2 数据的兼容性
+
+- **不原地升级，v3 必须重新部署到新地址**，和 v1 → v2 迁移方式一样：v2 已经写入的数据不迁移、不受影响，继续用 v2 合约地址只读查询（`getAgroFoodInfo` 等 v2 接口不变）。
+- v3 合约的 ABI 相对 v2 是**破坏性变更**（`newAgroFood` / `addTraceInfoByDistributor` 参数列表变了），不是 v2 那种「只增不改」，调用方（后端）必须按 traceNumber 是哪个版本创建的分流：新批次一律走 v3 合约地址；v2 时期创建、尚在流转中的批次（已生产未分销/已分销未零售）不能中途换合约——要么等它们在 v2 上走完剩余阶段，要么由 owner 走线下流程手动迁移（本设计不覆盖数据迁移，只覆盖新批次）。
+- 后端需要在 `trace_batch`（或新增一列）记一个「本批次绑定哪个合约地址/版本」，`ChainTxService` 发交易前按这个字段选 ABI 和地址，`ReadModelService` 重建读模型时同理，两边都要能同时认识 v2 与 v3 的 ABI。这是本设计里对后端影响最大的一块，工作量集中在这里而不是合约本身。
+- MySQL 的 `trace_assignment_log` 可以继续保留，作为「公司名/用户名」这类链上不存在的人类可读信息的台账；链上 `designatedDistributor`/`designatedRetailer` 只存地址，两边靠 traceNumber 对齐，互不覆盖。
+
+### 影响范围与取舍
+
+- 生产者地址成为新的单点：谁能写 `newAgroFood` 就能指定任意分销商地址，这和 v1/v2 里 owner 是单点信任的性质一样，本设计不引入多签或时间锁，超出这一轮范围。
+- 每次改派多一笔链上交易（`redesignateDistributor`），比现在纯 MySQL 记录多了 gas 成本和交易延迟；这是把强制从后端搬到链上必然的代价。
+- 没有对现存 v2 数据做任何改动或迁移方案设计之外的承诺；「时间不够就只写设计文档，不留半成品代码」——这一节到此为止，没有对应的 `.sol` 改动。

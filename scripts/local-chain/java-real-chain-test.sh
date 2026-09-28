@@ -30,16 +30,17 @@ tar -C "$REPO_ROOT" --exclude=back-me/target -cf - back-me | tar -C "$build_dir"
 mkdir -p "$build_dir/contracts/abi" && cp "$REPO_ROOT/contracts/abi/Trace.json" "$build_dir/contracts/abi/"
 
 cd "$build_dir/back-me"
-tests="RealChainSmokeTest RealChainBusinessFlowTest"
+# 可用 E2E_TESTS / E2E_OUT_PREFIX 指定要跑的测试与记录文件名前缀（files-e2e.sh 用）
+tests="${E2E_TESTS:-RealChainSmokeTest RealChainBusinessFlowTest}"
 # 文件名带日期和时间，同一天多次运行不覆盖之前的记录
-out="$REPO_ROOT/docs/artifacts/local-chain-java-test-$(date +%F-%H%M%S).txt"
+out="$REPO_ROOT/docs/artifacts/${E2E_OUT_PREFIX:-local-chain-java-test}-$(date +%F-%H%M%S).txt"
 {
   echo "# $tests $(date '+%F %T %z')：后端代码直连本地隔离链"
   echo "# JDK: $("$JDK21_HOME/bin/java" -version 2>&1 | head -1)；合约地址: $(python3 -c "import json;print(json.load(open('$E2E_HOME/last-smoke.json'))['contractAddress'])")"
   # MyBatis 的 SQL 日志里有 ERROR_REASON 列名，用 grep -v 去掉
   JAVA_HOME="$JDK21_HOME" E2E_SMOKE_FILE="$E2E_HOME/last-smoke.json" \
     "$MAVEN_HOME_E2E/bin/mvn" -B -q -C -Dmaven.repo.local="$E2E_HOME/m2" -Dtest="${tests// /,}" -Dsurefire.failIfNoSpecifiedTests=false test \
-    | grep -E '^\[real-chain(-flow)?\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
+    | grep -E '^\[(real-chain(-flow)?|files-e2e)\]|Tests run|FAIL|ERROR' | grep -v '^<==' || true
   for t in $tests; do
     report="target/surefire-reports/TEST-com.qhx.back.chain.$t.xml"
     [[ -f "$report" ]] && echo "$t: $(grep -o 'tests="[0-9]*"\|failures="[0-9]*"\|errors="[0-9]*"\|skipped="[0-9]*"' "$report" | head -4 | tr '\n' ' ')"

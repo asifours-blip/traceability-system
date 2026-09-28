@@ -1,0 +1,55 @@
+# 真实 MySQL：新表 schema 重复执行 + 文件与查询用例 + 业务闭环回归 2026-09-28 16:14:06 +0800
+# 容器 trace-mysql-test（mysql:8.0，端口 127.0.0.1:13306，库 trace_it）；MySQL 版本：8.0.46
+第 1 轮 auth-schema.sql 退出码 0
+第 1 轮 chain-tx-schema.sql 退出码 0
+第 1 轮 business-schema.sql 退出码 0
+第 2 轮 auth-schema.sql 退出码 0
+第 2 轮 chain-tx-schema.sql 退出码 0
+第 2 轮 business-schema.sql 退出码 0
+## file_object / trace_read_model 结构
+Create Table: CREATE TABLE `file_object` (
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_file_object_bound_key` (`bound_key`),
+  KEY `idx_file_object_cid` (`cid`),
+  KEY `idx_file_object_status_created` (`status`,`created_at`),
+  KEY `idx_file_object_claim` (`claim_trace_number`,`claim_stage`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='上传到 IPFS 的文件及其绑定状态'
+Create Table: CREATE TABLE `trace_read_model` (
+  PRIMARY KEY (`trace_number`),
+  KEY `idx_trace_read_model_claim` (`claim_status`),
+  KEY `idx_trace_read_model_stage` (`stage_reached`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='溯源读模型：只由读链结果写入，可随时从链上完整重建'
+## 第一次运行发现：分页 SQL 的动态条件之间没有空格，MySQL 驱动客户端替换参数后成为 "5AND COALESCE"，报语法错误（H2 不报）。已修复（TraceReadModelMapper），以下为修复后的结果
+## FilesAndQueriesMySqlSmokeTest + BusinessFlowMySqlSmokeTest（同一容器连续运行两次）
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 16.69 s -- in com.qhx.back.flow.BusinessFlowMySqlSmokeTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.33 s -- in com.qhx.back.flow.FilesAndQueriesMySqlSmokeTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 17.82 s -- in com.qhx.back.flow.BusinessFlowMySqlSmokeTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.58 s -- in com.qhx.back.flow.FilesAndQueriesMySqlSmokeTest
+  PASS FilesAndQueriesMySqlSmokeTest.孤儿清理_超期未绑定标ORPHANED并取消pin_共享CID保留_已清理的不能再用 0.972s
+  PASS FilesAndQueriesMySqlSmokeTest.分页边界_消费者查询只含公开字段 0.524s
+  PASS FilesAndQueriesMySqlSmokeTest.分页边界_批次列表_待我处理_关键字转义 1.163s
+  PASS FilesAndQueriesMySqlSmokeTest.交易FAILED或UNKNOWN不绑定_CONFIRMED后才绑定_未绑定不能公开读取 0.827s
+  PASS FilesAndQueriesMySqlSmokeTest.消费者详情从读模型取_不再读链 0.491s
+  PASS FilesAndQueriesMySqlSmokeTest.IPFS里文件缺失_公开读取返回410和明确错误码_详情提示缺失 0.523s
+  PASS FilesAndQueriesMySqlSmokeTest.公开读取_图片内联_PDF按附件下载_带nosniff与正确的Content_Type 0.904s
+  PASS FilesAndQueriesMySqlSmokeTest.上传_超大_空文件_伪造扩展名_类型不在白名单_均被拒绝且不写入IPFS 0.482s
+  PASS FilesAndQueriesMySqlSmokeTest.上传_服务端计算SHA256_CID读回核对_文件名清洗 0.283s
+  PASS FilesAndQueriesMySqlSmokeTest.阶段交易只能引用本账号上传且未被占用的文件 0.703s
+  PASS FilesAndQueriesMySqlSmokeTest.读模型重建_旧批次按链上写入者回填_匹配不上进未认领_幂等_与逐条读链一致 1.73s
+  PASS BusinessFlowMySqlSmokeTest.非指定的分销商写分销_403且不发交易 1.447s
+  PASS BusinessFlowMySqlSmokeTest.生产商看不到也改不了别人的批次 1.233s
+  PASS BusinessFlowMySqlSmokeTest.建号_授权结果未知_账号待确认不可登录_查证后启用 0.566s
+  PASS BusinessFlowMySqlSmokeTest.生产商在分销前可变更分销商_留历史_分销上链后不能再改 1.246s
+  PASS BusinessFlowMySqlSmokeTest.非指定的零售商写零售_403且不发交易 1.027s
+  PASS BusinessFlowMySqlSmokeTest.结果未知时重复提交_409且不再发请求_详情显示待确认可查证 1.283s
+  PASS BusinessFlowMySqlSmokeTest.更正只能追加_只有该阶段写入者能提交 1.035s
+  PASS BusinessFlowMySqlSmokeTest.公开文件只能按链上阶段读取_不接受任意CID 0.602s
+  PASS BusinessFlowMySqlSmokeTest.建号_链上已有角色则跳过授权交易 0.256s
+  PASS BusinessFlowMySqlSmokeTest.主流程_指定交接_三阶段上链_消费者只见公开字段_读回公开文件_追加更正 1.129s
+  PASS BusinessFlowMySqlSmokeTest.字段校验失败_400并指明字段 1.14s
+## 运行后的行数
+file_object	172
+file_object BOUND	111
+file_object ORPHANED	8
+trace_read_model	5
+trace_batch	122

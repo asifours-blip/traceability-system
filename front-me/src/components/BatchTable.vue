@@ -5,14 +5,18 @@
       <p class="card-subtitle">{{ subtitle }}</p>
     </div>
     <div class="toolbar">
-      <el-radio-group v-model="filter" size="small" @change="syncQuery">
+      <el-radio-group v-model="filter" size="small" @change="onFilter">
         <el-radio-button label="all">全部</el-radio-button>
         <el-radio-button label="todo">待我处理</el-radio-button>
       </el-radio-group>
-      <el-button size="small" icon="el-icon-refresh" @click="load">刷新</el-button>
+      <div>
+        <el-input v-model.trim="keyword" size="small" clearable placeholder="溯源号 / 产品名" class="keyword"
+          @keyup.enter.native="onFilter" @clear="onFilter"></el-input>
+        <el-button size="small" icon="el-icon-refresh" @click="load">刷新</el-button>
+      </div>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="block-alert"></el-alert>
-    <el-table v-loading="loading" :data="rows" border stripe class="apple-table" empty-text="暂无批次">
+    <el-table v-loading="loading" :data="list" border stripe class="apple-table" empty-text="暂无批次">
       <el-table-column label="溯源号" min-width="170">
         <template slot-scope="scope">
           <router-link :to="detailLink(scope.row)" class="trace-link">{{ scope.row.traceNumber }}</router-link>
@@ -39,6 +43,9 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination class="pager" background layout="total, sizes, prev, pager, next" :total="total"
+      :current-page="page" :page-size="size" :page-sizes="[10, 20, 50, 100]"
+      @current-change="onPage" @size-change="onSize"></el-pagination>
   </div>
 </template>
 
@@ -46,7 +53,8 @@
 import { listBatches } from '@/apis/trace'
 import { STAGES, STATUS_META } from '@/utils/traceFields'
 
-// 各角色的批次列表：数据只来自后端 /batches（后端按账号过滤，前端不做权限判断）
+// 各角色的批次列表：数据只来自后端 /batches（后端按账号过滤、分页、筛选「待我处理」，前端不做权限判断）
+// 后端从读模型取链上进度，不逐条读链；分页参数放在路由 query 里，刷新后保持
 export default {
   name: 'BatchTable',
   props: {
@@ -61,18 +69,13 @@ export default {
     return {
       stages: STAGES,
       list: [],
+      total: 0,
       loading: false,
       error: '',
-      // 筛选条件放在路由 query 里，刷新后保持
-      filter: this.$route.query.filter === 'todo' ? 'todo' : 'all'
-    }
-  },
-  computed: {
-    rows() {
-      if (this.filter !== 'todo') {
-        return this.list
-      }
-      return this.list.filter(row => this.isTodo(row))
+      filter: this.$route.query.filter === 'todo' ? 'todo' : 'all',
+      keyword: this.$route.query.keyword || '',
+      page: Number(this.$route.query.page) || 1,
+      size: Number(this.$route.query.size) || 10
     }
   },
   watch: {
@@ -86,29 +89,44 @@ export default {
   methods: {
     async load() {
       this.loading = true
-      const res = await listBatches()
+      const res = await listBatches({
+        page: this.page,
+        size: this.size,
+        todo: this.filter === 'todo',
+        keyword: this.keyword || undefined
+      })
       this.loading = false
       if (res.code === 200) {
-        this.list = res.data || []
+        this.list = res.data.records || []
+        this.total = res.data.total
         this.error = ''
+        // 删除或筛选后当前页已超出末页：回到最后一页
+        if (this.list.length === 0 && this.total > 0 && this.page > 1) {
+          this.page = Math.ceil(this.total / this.size)
+          this.syncQuery()
+          this.load()
+        }
       } else {
         this.list = []
+        this.total = 0
         this.error = res.mes
       }
     },
-    // 待我处理：我负责的阶段还没上链（含待确认、失败）
-    isTodo(row) {
-      const s = row.stages[this.myStage]
-      if (!s || s.status === 'CONFIRMED') {
-        return false
-      }
-      if (this.myStage === 'DISTRIBUTION') {
-        return row.stages.PRODUCTION.status === 'CONFIRMED'
-      }
-      if (this.myStage === 'RETAIL') {
-        return row.stages.DISTRIBUTION.status === 'CONFIRMED'
-      }
-      return true
+    onFilter() {
+      this.page = 1
+      this.syncQuery()
+      this.load()
+    },
+    onPage(p) {
+      this.page = p
+      this.syncQuery()
+      this.load()
+    },
+    onSize(s) {
+      this.size = s
+      this.page = 1
+      this.syncQuery()
+      this.load()
     },
     statusMeta(row, stage) {
       const s = row.stages && row.stages[stage]
@@ -121,7 +139,13 @@ export default {
       return { path: '/batch/' + encodeURIComponent(row.traceNumber), query: { stage: this.myStage } }
     },
     syncQuery() {
-      const query = { ...this.$route.query, filter: this.filter === 'todo' ? 'todo' : undefined }
+      const query = {
+        ...this.$route.query,
+        filter: this.filter === 'todo' ? 'todo' : undefined,
+        keyword: this.keyword || undefined,
+        page: this.page > 1 ? String(this.page) : undefined,
+        size: this.size !== 10 ? String(this.size) : undefined
+      }
       this.$router.replace({ query }).catch(() => {})
     }
   }
@@ -159,6 +183,16 @@ export default {
   display: flex;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.keyword {
+  width: 200px;
+  margin-right: 8px;
+}
+
+.pager {
+  margin-top: 12px;
+  text-align: right;
 }
 
 .block-alert {

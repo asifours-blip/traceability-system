@@ -18,6 +18,10 @@
             <i class="el-icon-user"></i>
             <span slot="title">用户管理</span>
           </el-menu-item>
+          <el-menu-item index="/readModel">
+            <i class="el-icon-refresh"></i>
+            <span slot="title">读模型</span>
+          </el-menu-item>
           <el-menu-item index="/block">
               <i class="el-icon-cpu"></i>
               <span slot="title">区块链浏览器</span>

@@ -9,6 +9,11 @@ export function getTraceDetail(traceNumber) {
     return request({ url: '/trace/detail/' + enc(traceNumber), method: 'get' })
 }
 
+// 消费者分页查询：只查读模型，只含公开字段。params: { keyword, page, size }
+export function searchTrace(params) {
+    return request({ url: '/trace/search', method: 'get', params })
+}
+
 // 已绑定到溯源号某阶段的公开文件（生产认证 production / 质检报告 distribution），可直接用作 <img src>
 export function publicFileUrl(traceNumber, stage) {
     return `${BASE_URL}/trace/${enc(traceNumber)}/file/${stage}`
@@ -16,8 +21,9 @@ export function publicFileUrl(traceNumber, stage) {
 
 // ---------- 批次（需登录，后端按账号与批次关系鉴权） ----------
 
-export function listBatches() {
-    return request({ url: '/batches', method: 'get' })
+// 分页：params { page, size, todo, keyword }，返回 { records, total, page, size }
+export function listBatches(params) {
+    return request({ url: '/batches', method: 'get', params })
 }
 
 export function getBatch(traceNumber) {
@@ -57,4 +63,19 @@ export function submitRetail(data) {
 
 export function verifyTx(id) {
     return request({ url: `/chain-tx/${id}/verify`, method: 'post', timeout: TX_TIMEOUT, tx: true })
+}
+
+// ---------- 管理员：读模型与文件 ----------
+
+// 从链上完整重建读模型（幂等），同时回填旧批次归属、补齐文件绑定；链上批次多时较慢
+export function rebuildReadModel() {
+    return request({ url: '/admin/read-model/rebuild', method: 'post', timeout: 300000 })
+}
+
+export function listUnclaimed(params) {
+    return request({ url: '/admin/read-model/unclaimed', method: 'get', params })
+}
+
+export function cleanupOrphans() {
+    return request({ url: '/admin/files/cleanup-orphans', method: 'post', timeout: 60000 })
 }

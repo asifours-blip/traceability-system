@@ -77,9 +77,23 @@
         </el-descriptions>
         <div v-if="stageOf(stage.key).hasFile" class="file-row">
           <span class="party-label">{{ stage.fileLabel }}</span>
-          <el-image :src="fileUrl(stage)" :preview-src-list="[fileUrl(stage)]" fit="contain" class="thumb">
-            <div slot="error" class="thumb-error">文件读取失败</div>
-          </el-image>
+          <template v-if="fileOf(stage.key).state === 'BOUND' && fileOf(stage.key).available !== false">
+            <el-image v-if="isImage(fileOf(stage.key))" :src="fileUrl(stage)" :preview-src-list="[fileUrl(stage)]" fit="contain" class="thumb">
+              <div slot="error" class="thumb-error">文件读取失败</div>
+            </el-image>
+            <a v-else :href="fileUrl(stage)" target="_blank" rel="noopener"><i class="el-icon-document"></i> {{ fileOf(stage.key).fileName }}</a>
+            <div class="file-meta">
+              已绑定 · {{ fileOf(stage.key).mimeType }} · {{ sizeText(fileOf(stage.key).size) }}
+              <span v-if="fileOf(stage.key).bindSource === 'REBUILD'">（重建时从 IPFS 登记的旧文件）</span>
+              <div class="mono">SHA-256 {{ fileOf(stage.key).sha256 }}</div>
+              <div v-if="fileOf(stage.key).available === null" class="warn-text">{{ fileOf(stage.key).message }}</div>
+            </div>
+          </template>
+          <el-alert v-else-if="fileOf(stage.key).errorCode === 'FILE_MISSING'" type="error" :closable="false" show-icon
+            title="文件缺失" :description="'链上登记了该文件（' + fileOf(stage.key).fileName + '），但存储节点上已找不到内容，请联系管理员恢复。SHA-256 ' + fileOf(stage.key).sha256"></el-alert>
+          <el-alert v-else type="warning" :closable="false" show-icon
+            :title="fileOf(stage.key).state === 'CONFLICT' ? '文件与链上不一致' : '文件未绑定'"
+            :description="fileOf(stage.key).message"></el-alert>
         </div>
 
         <!-- 链下更正：只追加 -->
@@ -334,6 +348,18 @@ export default {
       const f = (STAGE_FIELDS[stage] || []).find(x => x.name === name)
       return f ? f.label : name
     },
+    fileOf(key) {
+      return this.stageOf(key).file || {}
+    },
+    isImage(file) {
+      return !!file.mimeType && file.mimeType.startsWith('image/')
+    },
+    sizeText(bytes) {
+      if (!bytes && bytes !== 0) {
+        return ''
+      }
+      return bytes > 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(2) + ' MB' : Math.ceil(bytes / 1024) + ' KB'
+    },
     fileUrl(stage) {
       return publicFileUrl(this.traceNumber, stage.file)
     },
@@ -552,6 +578,17 @@ export default {
   height: 90px;
   border: 1px solid #e4e7ed;
   border-radius: 8px;
+}
+
+.file-meta {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #86868b;
+  word-break: break-all;
+}
+
+.file-row .el-alert {
+  margin-left: 12px;
 }
 
 .thumb-error {

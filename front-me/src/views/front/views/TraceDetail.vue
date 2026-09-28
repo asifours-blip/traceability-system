@@ -25,9 +25,14 @@
                 </div>
                 <div v-if="stage.file && detail[stage.legacy].hasFile" class="info-item">
                   <strong>{{ stage.fileLabel }}：</strong>
-                  <el-image :src="fileUrl(stage)" :preview-src-list="[fileUrl(stage)]" fit="contain" class="thumb">
-                    <div slot="error" class="thumb-error">文件读取失败</div>
-                  </el-image>
+                  <template v-if="detail[stage.legacy].fileState === 'AVAILABLE'">
+                    <el-image v-if="(detail[stage.legacy].fileType || '').startsWith('image/')" :src="fileUrl(stage)"
+                      :preview-src-list="[fileUrl(stage)]" fit="contain" class="thumb">
+                      <div slot="error" class="thumb-error">文件读取失败</div>
+                    </el-image>
+                    <a v-else :href="fileUrl(stage)" target="_blank" rel="noopener">下载{{ stage.fileLabel }}</a>
+                  </template>
+                  <span v-else class="file-note">{{ fileStateText[detail[stage.legacy].fileState] || '文件暂不可用' }}</span>
                 </div>
               </div>
               <div v-if="proofOf(stage).txHash" class="proof">
@@ -68,7 +73,13 @@ export default {
       detail: null,
       loading: false,
       error: '',
-      loggedIn: !!getToken()
+      loggedIn: !!getToken(),
+      // 后端 fileState：AVAILABLE 可读；其余给出明确说明，不显示空图片
+      fileStateText: {
+        MISSING: '文件缺失：链上登记了该文件，但存储节点上已找不到内容',
+        NOT_BOUND: '文件尚未绑定（对应交易未确认或文件未登记），暂不公开',
+        UNAVAILABLE: '文件存储服务暂时不可用，请稍后再试'
+      }
     };
   },
   computed: {
@@ -248,6 +259,10 @@ export default {
   height: 90px;
   border: 1px solid #e4e7ed;
   border-radius: 8px;
+}
+
+.file-note {
+  color: #f56c6c;
 }
 
 .thumb-error {

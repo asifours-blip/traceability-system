@@ -3,7 +3,7 @@
   <div class="table-card">
     <div class="card-header">
       <h2 class="card-title">溯源档案</h2>
-      <p class="card-subtitle">与本账号相关的批次（管理员可见全部）；列表只读数据库，详情再读链</p>
+      <p class="card-subtitle">与本账号相关的批次（管理员可见全部）；列表分页读数据库与读模型，详情再读链</p>
     </div>
     <el-table :data="list" border stripe v-loading="loading" class="apple-table" empty-text="暂无批次">
       <el-table-column label="溯源号" prop="traceNumber" min-width="170">
@@ -44,6 +44,9 @@
         </template>
       </el-table-column>
     </el-table>
+    <el-pagination class="pager" background layout="total, sizes, prev, pager, next" :total="total"
+      :current-page="page" :page-size="size" :page-sizes="[10, 20, 50, 100]"
+      @current-change="p => { page = p; loadData() }" @size-change="s => { size = s; page = 1; loadData() }"></el-pagination>
   </div>
 </div>
 </template>
@@ -56,6 +59,9 @@ export default {
   data() {
     return {
       list: [],
+      total: 0,
+      page: 1,
+      size: 10,
       loading: false
     }
   },
@@ -65,12 +71,14 @@ export default {
   methods: {
     async loadData() {
       this.loading = true
-      const res = await listBatches()
+      const res = await listBatches({ page: this.page, size: this.size })
       this.loading = false
       if (res.code === 200) {
-        this.list = res.data
+        this.list = res.data.records
+        this.total = res.data.total
       } else {
         this.list = []
+        this.total = 0
         this.$message.error(res.mes)
       }
     },
@@ -130,6 +138,11 @@ export default {
   color: #86868b;
   margin-top: 8px;
   font-weight: 400;
+}
+
+.pager {
+  margin-top: 16px;
+  text-align: right;
 }
 
 .apple-table {

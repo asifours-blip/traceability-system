@@ -37,6 +37,14 @@ const routes = [
                 }
             },
             {
+                path: '/readModel',
+                name: 'read-model',
+                component: () => import('@/views/admin/views/ReadModel.vue'),
+                meta: {
+                    title: '读模型与未认领批次',
+                }
+            },
+            {
                 path: '/role',
                 name: 'role',
                 component: () => import('@/views/admin/views/Role.vue'),
@@ -184,7 +192,7 @@ router.beforeEach((to, from, next) => {
     // 零售商专属路由
     const retailerRoutes = ['/retailer']
     // 管理员专属路由（后台）
-    const adminRoutes = ['/admin', '/block', '/setting', '/role']
+    const adminRoutes = ['/admin', '/block', '/setting', '/role', '/readModel']
     // 检查当前路由是否允许访问
     const path = to.path
     // 管理员可访问所有页面

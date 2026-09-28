@@ -4,22 +4,31 @@
         action="#"
         :auto-upload="false"
         :show-file-list="false"
-        :on-change="changeImageUpload"
-        :on-error="changeImageError"
-        accept="image/*"
+        :on-change="onChange"
+        :accept="accept"
     >
       <el-button slot="trigger" size="small" type="success">选取文件</el-button>
-      <el-button style="margin-left: 10px;" size="small" type="success"
-                 @click="submitUpload">上传到服务器
+      <el-button style="margin-left: 10px;" size="small" type="success" :loading="uploading"
+                 @click.stop="submitUpload">上传到服务器
       </el-button>
-      <div slot="tip" class="el-upload__tip">只能上传jpg/png文件，且不超过20MB</div>
-      <img v-if="imageUrl" :src="imageUrl"  style="max-width: 150px; height: auto;margin-left: 5px">
+      <div slot="tip" class="el-upload__tip">PNG / JPEG / WEBP 图片或 PDF，不超过 10 MB；按文件内容判定类型，改扩展名无效</div>
     </el-upload>
+    <div v-if="file" class="picked">
+      <img v-if="previewUrl" :src="previewUrl" class="preview">
+      <span v-else class="file-name"><i class="el-icon-document"></i> {{ file.name }}</span>
+      <span class="size">{{ sizeText }}</span>
+    </div>
+    <div v-if="uploaded" class="uploaded">
+      已上传（待交易确认后绑定）：<code>{{ uploaded.cid }}</code>
+      <div class="sha">SHA-256 {{ uploaded.sha256 }}</div>
+    </div>
   </div>
 </template>
-<!--TODO 由于获取的img hash值读取ipfs的值显示图片，所以imageUrl是上传的图片url，value是ipfs的hash值-->
+
 <script>
-import {uploadFileBase64} from "@/apis/ipfs";
+import { uploadFile, MAX_UPLOAD_BYTES, ACCEPT_TYPES, UPLOAD_ERRORS } from "@/apis/ipfs";
+
+// 选取本地文件 → multipart 上传 → v-model 得到 CID。本地预览用 object URL，不把文件读成 Base64
 export default {
   name: "ImgUpload",
   props: {
@@ -30,36 +39,85 @@ export default {
   },
   data() {
     return {
-      imageUrl: ""
+      accept: ACCEPT_TYPES,
+      file: null,
+      previewUrl: '',
+      uploading: false,
+      uploaded: null
     };
   },
+  computed: {
+    sizeText() {
+      return this.file ? (this.file.size / 1024 / 1024).toFixed(2) + ' MB' : ''
+    }
+  },
+  beforeDestroy() {
+    this.revoke()
+  },
   methods: {
-    async submitUpload() {
-      if (!this.imageUrl)
-        return this.$message.error('请上传图片');
-      let base64 = this.imageUrl.split(',')[1];
-      const {data} = await uploadFileBase64(base64);
-      this.$emit('input', data.hash);
-      this.$message.success("上传成功");
-    },
-    changeImageUpload(file) {
-      const isLt2M = file.size / 1024 / 1024 < 2;
-      if (!isLt2M) {
-        this.$message.error('上传轮播图大小不能超过 2MB!');
-      } else {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          this.imageUrl = e.target.result;
-        };
-        reader.readAsDataURL(file.raw);
+    revoke() {
+      if (this.previewUrl) {
+        URL.revokeObjectURL(this.previewUrl)
+        this.previewUrl = ''
       }
     },
-    changeImageError() {
-      this.$message.error('上传失败!');
+    onChange(file) {
+      this.revoke()
+      this.uploaded = null
+      this.$emit('input', '')
+      if (file.size > MAX_UPLOAD_BYTES) {
+        this.file = null
+        return this.$message.error('文件超过 10 MB')
+      }
+      if (file.size === 0) {
+        this.file = null
+        return this.$message.error('文件为空')
+      }
+      this.file = file.raw
+      if (file.raw.type && file.raw.type.startsWith('image/')) {
+        this.previewUrl = URL.createObjectURL(file.raw)
+      }
+    },
+    async submitUpload() {
+      if (!this.file) {
+        return this.$message.error('请先选取文件');
+      }
+      this.uploading = true
+      const res = await uploadFile(this.file);
+      this.uploading = false
+      if (res.code !== 200) {
+        const code = res.data && res.data.errorCode
+        return this.$message.error(UPLOAD_ERRORS[code] || res.mes || '上传失败')
+      }
+      this.uploaded = res.data
+      this.$emit('input', res.data.cid);
+      this.$message.success("上传成功");
     }
   },
 };
 </script>
 
 <style scoped>
+.picked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.preview {
+  max-width: 150px;
+  height: auto;
+}
+
+.size, .sha {
+  color: #86868b;
+  font-size: 12px;
+}
+
+.uploaded {
+  margin-top: 6px;
+  font-size: 13px;
+  word-break: break-all;
+}
 </style>

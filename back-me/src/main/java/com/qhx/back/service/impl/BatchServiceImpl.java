@@ -757,7 +757,10 @@ public class BatchServiceImpl implements BatchService
                 pub.put("hasFile", StrUtil.isNotBlank(cid));
                 if (StrUtil.isNotBlank(cid)) {
                     // 只给状态，不给 CID：AVAILABLE 可读 / MISSING 存储节点上已缺失 / NOT_BOUND 未绑定 / UNAVAILABLE 存储服务不可用
-                    pub.put("fileState", publicFileState(fileService.describe(traceNumber, stage, cid, true)));
+                    Map<String, Object> described = fileService.describe(traceNumber, stage, cid, true);
+                    pub.put("fileState", publicFileState(described));
+                    // 类型决定前端内联展示（图片）还是给下载链接（PDF）
+                    pub.put("fileType", described.get("mimeType"));
                 }
             }
             // 兼容原消费者页面的 producer / distributor / retailer 三段结构

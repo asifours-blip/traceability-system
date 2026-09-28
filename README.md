@@ -12,7 +12,7 @@
 - **分页查询与读模型**：批次列表、消费者查询分页取 MySQL 读模型，不逐条读链；读模型可由管理员从链上幂等重建，并为本功能上线前的旧批次按链上写入者回填归属。详见 [docs/read-model.md](docs/read-model.md)
 - **IoT 看板**：`IotDataSimulatorTask` **每 5 分钟随机写入** 温湿度/光照到 MySQL，**不是真实传感器**
 - **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单，只返回公开字段）
-- **批次归属与交接**：生产商建档时指定分销商，分销商指定零售商，只有被指定者能写下一阶段；业务字段逐项校验；链下只追加的更正。这些是**后端规则**，链上合约只强制角色、阶段顺序与每阶段只写一次，详见 [docs/business-flow.md](docs/business-flow.md)
+- **批次归属与交接**：生产商建档时指定分销商，分销商指定零售商；v3 合约按链上指定地址强制下一阶段写入，旧 v2 批次仍只有后端指定校验。字段校验、归属、链下更正仍在后端，详见 [docs/business-flow.md](docs/business-flow.md)
 - **账号 + Bearer token**：用户名/密码（BCrypt）登录，服务端签发 256 位随机 token（库里只存 sha256）；交易签名地址取自服务端账号绑定的地址，客户端 `address` 头一律忽略
 - **离线测试门禁**：Mock `WeBaseClient`，Maven 单测不连链；前端 ESLint
 
@@ -66,8 +66,8 @@ code1.1.3/
 │           ├── application.yml            # 模板 + 内嵌 ABI
 │           └── application-local.yml.example
 ├── front-me/                      # Vue 2.6
-├── contracts/                     # Solidity 源码（见该目录 README）
-│   └── abi/Trace.json             # 从 application.yml 抽出的运行时 ABI
+├── contracts/                     # v2 与 v3 Solidity 源码（见该目录 README）
+│   └── abi/Trace.json、TraceV3.json  # 分版本生成的运行时 ABI
 ├── docs/                          # 证据、架构、设计说明
 └── .github/workflows/             # ci.yml（测试）
 ```
@@ -143,8 +143,8 @@ npm run lint
 
 - **角色**：部署者为 owner，只有 owner 能 `addProducer` / `addDistributor` / `addRetailer` 与 `removeProducer` / `removeDistributor` / `removeRetailer`；owner 自身不持有业务角色，持有者只能 `renounce*` 放弃自己的角色
 - **生产**：`newAgroFood(...)`，`onlyProducer`；溯源号非空且不可重复
-- **流转**：严格按 生产 → 分销 → 零售 的顺序，每个阶段只能写一次；条目合约 `AgroFoodInfoItem` 只接受 `Trace` 写入，无法绕过角色与阶段检查
-- **旧合约**：早期部署（v1）的 setter 无访问控制、角色可自我扩散，这些漏洞在已部署的旧合约上仍然存在；v2 需要重新部署，旧数据不迁移。详见 [contracts/README.md](contracts/README.md)
+- **流转**：v2/v3 均强制 生产 → 分销 → 零售、每阶段只写一次；v3 另按链上指定地址强制交接。条目合约只接受所属 Trace 写入
+- **版本迁移**：v1 已部署漏洞不因源码更新消失；v3 是新地址与破坏性 ABI，旧 v2 批次固定其原部署地址继续流转，不迁入 v3。详见 [contracts/README.md](contracts/README.md)
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
 - **没有** `getAgroFoodListDetail`：原来的 `GET /trace/list` 对每个编号再打 3 次链查询（N+1）；现已删除，批次列表 `GET /batches` 分页读数据库与读模型，详情再读链
 
@@ -163,7 +163,7 @@ npm run lint
 | 批次读写按账号与批次的关系鉴权（生产商只碰自己建档的，分销商/零售商只碰指定给自己的），不靠前端隐藏按钮 | `BatchServiceImpl`，见 [docs/business-flow.md](docs/business-flow.md) |
 | 管理员新建账号：先读链上 `isX`，已有角色则不发交易；否则由**管理员地址**签名调用 `addX(address)`，结果未知时账号保持停用、查证后启用。停用账号时撤销其全部 token，并由管理员签名调用 `removeX(address)` | `UserAccountServiceImpl` |
 | 新用户的链上地址须是**已在 WeBASE-Front 托管私钥**的地址，由管理员填写（仓库未对接 WeBASE 私钥管理接口） | 用户管理页 |
-| 登录限流：按「账号 + IP」统计失败次数，滑动窗口内达到阈值（默认 5 次/300 秒）即锁定（默认 60 秒），返回 429 + `Retry-After`；登录成功清零 | `LoginRateLimiterImpl`，见 `back-me/src/test/java/com/qhx/back/auth/LoginRateLimitTest.java` |
+| 登录限流：按「账号 + IP」统计失败次数，滑动窗口达到阈值即锁定，返回 429 + `Retry-After`；状态仅在当前 JVM 内，多实例需共享计数 | `LoginRateLimiterImpl`，见 [docs/production-boundaries.md](docs/production-boundaries.md) |
 
 ## IoT 数据（定时模拟任务，非真实传感器）
 
@@ -173,19 +173,17 @@ npm run lint
 
 ## 验证状态（三档）
 
-不是所有声明的分量都一样：下面按验证方式分三档，越往下越接近真实部署，但也越少被跑过。
+**第一档：离线验证通过。** `contracts/` 的 `npm test` 为 37/37（v2 + v3，Hardhat 进程内 EVM）；`npm run test:legacy` 是 v1 对比，4 通过、8 个 v3 用例跳过、25 个**预期失败**，退出码 25。后端当前 `mvn -B test` 共 164 项，0 失败、31 项条件跳过（实际执行 133 项）；前端 Node 16 的 `npm ci`、`npm run lint`、`npm run build` 均通过。离线测试使用 Mock WeBASE/H2/FakeKubo，不能替代真实链与生产部署。
 
-**第一档：已实现并通过隔离验证**（`mvn -B test` / `npm run lint`，Mock WeBASE、Mock/Fake kubo、H2 内存库，不连任何外部服务，CI `ci.yml` 每次跑）——三角色流转、字段校验、批次归属与交接、链下更正、账号鉴权与登录限流、文件上传/绑定/孤儿清理、读模型分页查询，见各自的单测类与 [docs/test_report.md](docs/test_report.md)。
+**第二档：本地隔离链验证通过。** 旧 v2 链、文件与备份恢复记录见 [产物索引](docs/artifacts/README.md)。v3 裸合约两次直接绕过后端的非指定分销商交易，在块 42 与 59 均回执 `status=0x16`、revert 为 `Trace: caller is not the designated distributor`；后端按批次分流的六笔交易在块 77–82 回执 `0x0`、`to` 地址匹配 v2/v3，读模型与消费者查询通过。后端这次连接真实四节点 FISCO BCOS 和 WeBASE-Front，**业务库是 H2 内存、文件服务是 FakeKubo**；另有真实 MySQL 的一次旧批次地址迁移小验证，但没有做 v3 + 真实 MySQL/IPFS 完整业务联调。以上为本机手工运行，不等于默认 CI 或生产环境。
 
-**第二档：已在本地真实链和 IPFS 上验证**（`scripts/local-chain/` 搭的隔离 FISCO BCOS 2.7.2 + WeBASE-Front v1.5.5，本机真实 kubo，手动执行，未进 CI 常规流程）——合约部署、三阶段真实上链与越权/共识停滞反例、文件经真实 kubo 上传/pin/GC/读模型重建、MySQL 备份恢复演练（批次/溯源号/文件 CID 三者对得上，消费者页能读回）。记录见 [docs/artifacts/](docs/artifacts/)、[docs/webase-front-contract.md](docs/webase-front-contract.md)、[docs/backup-restore.md](docs/backup-restore.md)。CI 的 `local-chain-smoke.yml` 跑的是同一套脚本但换成官方 Docker 镜像拉取的 WeBASE-Front（按摘要锁定，不是本机这份 jar 的同一次构建，见 [docs/webase-front-contract.md](docs/webase-front-contract.md)）。
-
-**第三档：需要正式联盟链才能验证，本仓库没有做**——多机构真实节点间的网络分区与拜占庭场景；生产规模的 MySQL 主从/多可用区；kubo 集群或对象存储替代单机仓库；合约 v3（链上强制交接对象，见 [contracts/README.md](contracts/README.md) 的设计说明，未实现）；任何需要真实资金/真实身份的场景。
+**第三档：尚未验证。** 多机构真实联盟链、跨实例登录限流、生产规模 MySQL/存储、真实身份与数据真实性、生产部署与运维恢复目标。v2 旧批次仍不具备指定交接对象的链上强制；配置仅支持一份 v2 和一份 v3 地址，历史多地址自动路由尚未实现。
 
 ## CI
 
 | Workflow | 作用 | 注意 |
 |----------|------|------|
-| `.github/workflows/ci.yml` | `mvn -B test` + `npm run lint` | 离线 `mvn -B test` + `npm run lint`；不连 FISCO/IPFS。默认分支 CI 以 Actions 为准。 |
+| `.github/workflows/ci.yml` | 后端 `mvn -B test`、前端 `npm run lint`、合约 `npm test` 与双 ABI 新鲜度检查 | 离线运行，不连 FISCO/IPFS；前端 production build 只在本地验收，默认分支 CI 以 Actions 为准。 |
 | `.github/workflows/local-chain-smoke.yml` | 手动触发（`workflow_dispatch`）：ubuntu 上 `USE_OFFICIAL=1 run-all.sh` | 下载只来自官方源并校验哈希；本地用 actionlint、`act -n` 与 WSL 里逐步执行核对过，**尚未在 GitHub Actions 上实际跑过**（本仓库不推送） |
 
 ## 仓库历史与命名
@@ -194,7 +192,7 @@ npm run lint
 
 ## 已知限制
 
-1. 「指定交接对象」是后端规则：持有分销商/零售商角色且能直接调用合约（或直接访问 WeBASE-Front）的账户可以绕开合约本身没有强制；上线前直接写在链上的历史批次没有归属记录，业务角色的列表里看不到。这些旧文件在重建读模型时凭读链结果直接标记为已绑定（`file_object.bind_source=LEGACY_CHAIN_READ`），和走正常交易绑定的文件（`TX_CONFIRMED`）区分开，批次详情页会标出来
+1. v3 批次由链上强制指定交接；v2 旧批次仍只靠后端校验，持角色账户直调 v2 合约可绕过。上线前直接写链的历史批次可能缺少归属记录，业务角色列表里看不到。这些旧文件在重建读模型时凭读链结果直接标记为已绑定（`file_object.bind_source=LEGACY_CHAIN_READ`），和走正常交易绑定的文件（`TX_CONFIRMED`）区分开，批次详情页会标出来
 2. 登录已按账号 + IP 限流（见上表），但 token 仍是服务端会话（非 JWT），没有刷新机制；过期会话不会自动清理；没有 MFA、密码修改与找回
 3. 地址合法性检查 `0x` + 40 位十六进制，无 EIP-55 checksum
 4. Solidity `^0.4.25`，未接 Foundry CI

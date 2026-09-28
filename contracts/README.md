@@ -2,7 +2,8 @@
 
 本目录是农产品溯源系统的链上部分（`pragma solidity ^0.4.25`，面向 FISCO BCOS 2.x / WeBASE-Front）。
 
-- **v2（当前源码）**：重做了访问控制与阶段规则，并补上可离线运行的合约测试。
+- **v3（`v3/`）**：在 v2 的角色与阶段规则上增加链上指定下游；已通过 Hardhat 与本地隔离链验证。
+- **v2（根目录源码）**：重做访问控制与阶段规则；旧批次继续使用其原部署地址。
 - **v1（提交 `8ec675c` 及之前的源码）**：毕业设计时的版本，存在下文「v1 的已知漏洞」中列出的问题。**已经部署到链上的 v1 合约不会因为本目录源码更新而改变，这些漏洞在旧部署上依然存在。**
 
 ## 来源与诚实说明
@@ -16,7 +17,9 @@
 
 | 文件 | 职责 |
 |------|------|
-| `Trace.sol` | 溯源入口：创建批次、分销/零售追加、阶段检查、查询 |
+| `Trace.sol` | v2 溯源入口：创建批次、分销/零售追加、阶段检查、查询 |
+| `v3/TraceV3.sol` / `v3/AgroFoodInfoItemV3.sol` | v3 溯源入口与条目：记录并检查指定下游地址 |
+| `abi/TraceV3.json` / `test/TraceV3.test.js` | v3 ABI 与离线测试 |
 | `AgroFoodInfoItem.sol` | 单个溯源号的生产/分销/零售数据与各阶段写入者；只接受创建它的 Trace 写入 |
 | `Ownable.sol` | 管理员（owner = 部署者） |
 | `Producer.sol` / `Distributor.sol` / `Retailer.sol` | 三种业务角色，授予/撤销仅限 owner |
@@ -142,13 +145,13 @@ v1 上通过的 4 项（S2-3、R3-10、F-1、F-4）是 owner 修改系统信息�
 ```bash
 npm ci              # 安装 solc@0.4.25、hardhat、ethers（版本在 package.json 中锁定）
 npm test            # 编译到 build/，然后在 Hardhat 进程内 EVM 上运行 test/
-npm run abi         # 重新生成 abi/Trace.json
+npm run abi         # 重新生成 abi/Trace.json 与 abi/TraceV3.json
 npm run test:legacy # 对 v1 源码跑同一套测试（需要完整 git 历史；预期失败，用于对比）
 ```
 
-- **编译器**：直接使用 npm 包 `solc@0.4.25` 内置的 `soljson.js`，不在运行时联网下载编译器。该文件是 asm.js，Node 默认调用栈加载不了，所以脚本以 `node --stack-size=4000` 运行（已写在 npm scripts 里）。编译设置显式写为不开优化器、`evmVersion: byzantium`，与 solc 0.4.25 默认值一致。编译前把源码换行统一为 LF，使 Windows 与 Linux 得到相同的产物。
+- **编译器**：直接使用 npm 包 `solc@0.4.25` 内置的 `soljson.js`，不在运行时联网下载编译器。该文件是 asm.js，Node 默认调用栈加载不了，所以脚本以 `node --stack-size=4000` 运行（已写在 npm scripts 里）。v2 保持不开优化器，v3 单独开启优化器；均使用 `evmVersion: byzantium`。v3 creation/runtime 字节码分别为 22,040/20,606 B，这组尺寸不适用于 v2。编译前把源码换行统一为 LF，使 Windows 与 Linux 得到相同的产物。
 - **测试链**：Hardhat 只作为进程内 EVM 和 mocha 运行器（`hardhat test --no-compile`），硬分叉设为 `byzantium` 以匹配编译目标；没有开启 `allowUnlimitedContractSize`，Trace 运行时字节码约 22.9 KB，在 EIP-170 的 24 KB 上限内。这不是 FISCO BCOS 节点的仿真，FISCO 特有行为（国密、预编译合约、群组等）不在测试范围内。
-- **ABI 可复现**：`abi/Trace.json` 由 `npm run abi` 生成（即 `node --stack-size=4000 scripts/compile.js --write-abi`）。CI 的 `contracts` job 会重新生成并用 `git diff --exit-code` 检查提交的文件是否最新。
+- **ABI 可复现**：`abi/Trace.json` 与 `abi/TraceV3.json` 均由 `npm run abi` 生成（即 `node --stack-size=4000 scripts/compile.js --write-abi`）。CI 的 `contracts` job 会重新生成并用 `git diff --exit-code` 检查两个提交文件是否最新。
 - `npm audit` 会报告若干 devDependencies（Hardhat 的传递依赖）的告警；这些包只在本地/CI 测试时使用，不进入链上合约或后端产物。
 
 ## 已知限制
@@ -158,37 +161,27 @@ npm run test:legacy # 对 v1 源码跑同一套测试（需要完整 git 历史�
 - 链上只保证「谁、按什么顺序、写了一次」，不验证数据内容本身的真实性（证书、质检报告等只是存了 hash/CID）。
 - 查询仍是 N+1：`getAgroFoodList()` 只返回溯源号数组，后端对每个号再调三次查询；列表没有分页。
 - `pragma experimental ABIEncoderV2` 在 0.4.25 中仍是实验特性（`getAgroFoodList` 返回 `string[]` 需要它），沿用 v1 的选择以保持 ABI 兼容。
-- 只在本地隔离链（单机 4 节点，`scripts/local-chain/`）上部署验证过，未在生产或多机环境验证。
+- v2、v3 均只在本地隔离链（单机 4 节点，`scripts/local-chain/`）上部署验证过，未在生产或多机环境验证。v3 裸链与后端分流证据见 [运行索引](../docs/artifacts/README.md)。
 
 ## 调用路径
 
 应用不使用 FISCO Java SDK。`HttpUtil` POST 到 WeBASE-Front，body 带 `contractName=Trace`、`contractAddress`、`contractAbi`、`user`（链上身份）、`funcName`、`funcParam`。
 
-## v3 设计（未实现，只是设计文档）
+## v3 实现与 v2 边界
 
-**现状**：「只有被指定的分销商/零售商能写下一阶段」目前只在后端强制（`BatchServiceImpl` 按 `trace_batch.distributor_id` / `retailer_id` 校验），合约层面只检查角色（`onlyDistributor` / `onlyRetailer`），不检查是不是**被指定的那一个**。持有对应角色的账户只要绕过后端、直接经 WeBASE-Front（或任何能访问它的调用方）调合约，就能给任意批次写下一阶段——`docs/business-flow.md` 里 `RealChainBusinessFlowTest` 的 outsider 场景就是在演示这一点：outsider 在链上确实有分销商角色，合约会接受它的写入，是后端把它拒了。
+v2 在链上只检查角色、阶段顺序与只写一次，指定交接对象仅由后端 `trace_batch` 校验；能直接调用 v2 合约的持角色账户可绕开后端指定。v3 将下游地址及其角色约束写进合约，不能原地址升级。
 
-**目标**：把这条规则挪到链上强制，去掉「后端是唯一防线」这个前提。
+| 环节 | v2 | v3 |
+|------|----|----|
+| 生产 `newAgroFood` | 不带下游地址 | 同笔指定非零且持角色的分销商地址 |
+| 分销 `addTraceInfoByDistributor` | 仅校验角色与阶段 | 调用者须为链上指定分销商，并在同笔指定持角色的零售商 |
+| 零售 `addTraceInfoByRetailer` | 仅校验角色与阶段 | 调用者须为链上指定零售商 |
+| 分销前改派 | 后端链下台账 | 生产者调用 `redesignateDistributor`；只能在分销前，触发 `DistributorRedesignated` |
+| 零售改派 | 原后端链下流程 | **未定义也未实现** v3 零售改派接口 |
+| 查询 | `getStageActors` 查询实际写入者 | `getDesignations` 另查当前指定的两个下游地址 |
 
-### 存储与接口变化
+v3 `newAgroFood` 和 `addTraceInfoByDistributor` 的参数列表相对 v2 改变，是**破坏性 ABI 变更**。条目合约仍只接受所属 Trace 写入；owner/角色、阶段顺序、只写一次和 `TraceStageRecorded` 继续保留。非指定调用的拒绝文本包括 `Trace: caller is not the designated distributor` 与 `Trace: caller is not the designated retailer`。链上只存地址，企业名与改派原因等链下信息仍在 MySQL 台账。
 
-- `AgroFoodInfoItem` 每条记录新增两个字段：`address designatedDistributor`、`address designatedRetailer`。
-- `Trace.newAgroFood(...)` 新增一个参数 `address designatedDistributor`（生产时必须指定，不能是 0 地址——与后端现有规则「生产建档必须指定下游分销商」一致）。
-- 新增 `Trace.redesignateDistributor(string traceNumber, address newDistributor)`：仅限该批次的生产者本人调用，且只在分销阶段尚未写入时允许（对应后端现在 `trace_assignment_log` 记录的「分销前可改派」）。每次改派触发一个事件，替代目前只在 MySQL 里留痕的做法。
-- `Trace.addTraceInfoByDistributor(...)` 新增参数 `address designatedRetailer`（分销时必须指定零售商，同上）；执行时除了 `onlyDistributor`，还要 `require(msg.sender == designatedDistributor)`。
-- `Trace.addTraceInfoByRetailer(...)` 执行时除了 `onlyRetailer`，还要 `require(msg.sender == designatedRetailer)`。
-- 新增 revert 文本：`Trace: caller is not the designated distributor` / `Trace: caller is not the designated retailer`。
-- `getStageActors` 之外新增 `getDesignations(string traceNumber) returns (address designatedDistributor, address designatedRetailer)`，供后端核对链上指定与 MySQL 台账是否一致。
+新批次绑定新部署的 v3 地址与 ABI；已有 v2 批次固定**实际 v2 部署地址**，在 v2 走完剩余阶段。升级 SQL 执行前必须把占位符替换为真实 v2 地址；后端配置只各保留一份 v2/v3 地址与 ABI，批次记录自身版本和地址。配置漂移时拒绝读写，**不支持多份历史地址自动路由**。v2 数据不迁到 v3，读模型重建按合约版本分别查询。
 
-### 和 v2 数据的兼容性
-
-- **不原地升级，v3 必须重新部署到新地址**，和 v1 → v2 迁移方式一样：v2 已经写入的数据不迁移、不受影响，继续用 v2 合约地址只读查询（`getAgroFoodInfo` 等 v2 接口不变）。
-- v3 合约的 ABI 相对 v2 是**破坏性变更**（`newAgroFood` / `addTraceInfoByDistributor` 参数列表变了），不是 v2 那种「只增不改」，调用方（后端）必须按 traceNumber 是哪个版本创建的分流：新批次一律走 v3 合约地址；v2 时期创建、尚在流转中的批次（已生产未分销/已分销未零售）不能中途换合约——要么等它们在 v2 上走完剩余阶段，要么由 owner 走线下流程手动迁移（本设计不覆盖数据迁移，只覆盖新批次）。
-- 后端需要在 `trace_batch`（或新增一列）记一个「本批次绑定哪个合约地址/版本」，`ChainTxService` 发交易前按这个字段选 ABI 和地址，`ReadModelService` 重建读模型时同理，两边都要能同时认识 v2 与 v3 的 ABI。这是本设计里对后端影响最大的一块，工作量集中在这里而不是合约本身。
-- MySQL 的 `trace_assignment_log` 可以继续保留，作为「公司名/用户名」这类链上不存在的人类可读信息的台账；链上 `designatedDistributor`/`designatedRetailer` 只存地址，两边靠 traceNumber 对齐，互不覆盖。
-
-### 影响范围与取舍
-
-- 生产者地址成为新的单点：谁能写 `newAgroFood` 就能指定任意分销商地址，这和 v1/v2 里 owner 是单点信任的性质一样，本设计不引入多签或时间锁，超出这一轮范围。
-- 每次改派多一笔链上交易（`redesignateDistributor`），比现在纯 MySQL 记录多了 gas 成本和交易延迟；这是把强制从后端搬到链上必然的代价。
-- 没有对现存 v2 数据做任何改动或迁移方案设计之外的承诺；「时间不够就只写设计文档，不留半成品代码」——这一节到此为止，没有对应的 `.sol` 改动。
+验证：`npm test` 37/37 通过；`npm run test:legacy` 为 v1 对比，4 通过、8 个 v3 用例跳过、25 个预期失败（进程退出码 25）；隔离链裸合约两次非指定分销商交易回执分别在块 42、59 为 `0x16`，理由均为 `Trace: caller is not the designated distributor`。后端分流的六笔交易在块 77–82 回执 `0x0` 且目标地址匹配版本，见 [原始产物索引](../docs/artifacts/README.md)。该后端测试连接真实四节点链和 WeBASE-Front，但业务库为 H2 内存、文件服务为 FakeKubo；不能称为真实 MySQL/IPFS 全链路验收。

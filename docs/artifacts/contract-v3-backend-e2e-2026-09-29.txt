@@ -1,0 +1,32 @@
+# 合约 v3 后端真实链分流验收（2026-09-29 00:35:35 +0800）
+
+源码 HEAD：80e78a8f077e689dcd6356b54713dd88237e24ee
+测试：RealChainContractV3E2ETest，Surefire tests=1 failures=0 errors=0 skipped=0
+环境：WSL ~/trace-e2e 隔离四节点 FISCO + WeBASE-Front 5102；业务库 H2 内存；文件服务 FakeKubo。此证据不代表真实 MySQL 或真实 IPFS 验收。
+调用：E2E_TESTS=RealChainContractV3E2ETest E2E_OUT_PREFIX=contract-v3-backend-final E2E_V3_FILE=docs/artifacts/contract-v3-e2e-2026-09-29-rerun.txt bash scripts/local-chain/java-real-chain-test.sh
+输入裸链运行 runId：20260929002956
+v2 目标地址：0x0109e454b0db1c470bedd94863bda2b829347425
+v3 目标地址：0xb33a548256dcc738a60481896415650ee96d06ea
+断言：Spring API 返回的 ChainTx=CONFIRMED；每笔 Front transactionReceipt 的 txHash、blockNumber、status=0x0、to=预期合约地址均一致；读模型的 version/address/stageReached 与消费者三阶段查询均通过。
+
+## Surefire 逐笔输出（原样提取）
+[real-chain-v3] 旧批次预绑定 V2 BV2-1790613355769 address=0x0109e454b0db1c470bedd94863bda2b829347425
+[real-chain-v3] v2 production before v3 ChainTx=1 hash=0x7e68cc6b8f97c155846e5a28f1287d396346c939550cf2e3e1a10e203bf247a8 block=77 receiptStatus=0x0 receiptTo=0x0109e454b0db1c470bedd94863bda2b829347425
+[real-chain-v3] read-model BV2-1790613355769 version=V2 address=0x0109e454b0db1c470bedd94863bda2b829347425 stageReached=1 actors=0x0a552354203e3c8c85a43e31d09f89e30d948719,null,null
+[real-chain-v3] v3 production ChainTx=2 hash=0x47e92007c6a75b0fd17dd23557412bd55d3a4acbf67c53c544387604d185d019 block=78 receiptStatus=0x0 receiptTo=0xb33a548256dcc738a60481896415650ee96d06ea
+[real-chain-v3] read-model BV3-1790613355769 version=V3 address=0xb33a548256dcc738a60481896415650ee96d06ea stageReached=1 actors=0x0a552354203e3c8c85a43e31d09f89e30d948719,null,null
+[real-chain-v3] v3 非指定分销商经后端拒绝 403
+[real-chain-v3] v3 distribution ChainTx=3 hash=0xc1a9854c00bb249579249bf3f5908189a533de131b2fe44efb78b5f78f4e1651 block=79 receiptStatus=0x0 receiptTo=0xb33a548256dcc738a60481896415650ee96d06ea
+[real-chain-v3] v3 retail ChainTx=4 hash=0x5462f3c1d8bb7e3876376e8d5a9dc52f5ee78034627298c595e1a2f17fad2836 block=80 receiptStatus=0x0 receiptTo=0xb33a548256dcc738a60481896415650ee96d06ea
+[real-chain-v3] read-model BV3-1790613355769 version=V3 address=0xb33a548256dcc738a60481896415650ee96d06ea stageReached=3 actors=0x0a552354203e3c8c85a43e31d09f89e30d948719,0x8d1dee1fac2db596bc03ae23d5b7b00819e05be3,0xb62aa68fb6a60685a85508b01333dbd117f3f670
+[real-chain-v3] consumer BV3-1790613355769 production=苹果 stages=3
+[real-chain-v3] v2 distribution after v3 ChainTx=5 hash=0x2c760008bdc0e48f16111d4136fbffd63f753d4d3798d4348b47c484e682beb5 block=81 receiptStatus=0x0 receiptTo=0x0109e454b0db1c470bedd94863bda2b829347425
+[real-chain-v3] v2 retail after v3 ChainTx=6 hash=0x2f09c3ee7c3177aeb199564b44c809ed7ca1f8f58d831b911428a3e6294793fa block=82 receiptStatus=0x0 receiptTo=0x0109e454b0db1c470bedd94863bda2b829347425
+[real-chain-v3] read-model BV2-1790613355769 version=V2 address=0x0109e454b0db1c470bedd94863bda2b829347425 stageReached=3 actors=0x0a552354203e3c8c85a43e31d09f89e30d948719,0x8d1dee1fac2db596bc03ae23d5b7b00819e05be3,0xb62aa68fb6a60685a85508b01333dbd117f3f670
+[real-chain-v3] consumer BV2-1790613355769 production=苹果 stages=3
+
+## 补充的裸合约回执
+原始越权拒绝块 42：docs/artifacts/contract-v3-e2e-2026-09-29.txt；同一脚本独立重跑越权拒绝块 59：docs/artifacts/contract-v3-e2e-2026-09-29-rerun.txt。两次均向 Front 再查 receipt 并核对 RPC block hash。
+
+Surefire XML：/home/tang/trace-e2e/back-me-build/back-me/target/surefire-reports/TEST-com.qhx.back.chain.RealChainContractV3E2ETest.xml
+原始通用 runner 记录：docs/artifacts/contract-v3-backend-final-2026-09-29-003535.txt（其标题引用旧 smoke 地址，实际 v2/v3 地址以本文件与输入 JSON 为准）。

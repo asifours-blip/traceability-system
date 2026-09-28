@@ -55,7 +55,7 @@ function main() {
       // v2 保持默认关闭；v3 为满足 EVM 合约大小限制启用优化器。真实链部署须使用同一产物。
       optimizer: { enabled: process.env.TRACE_V3 === "1", runs: 200 },
       evmVersion: "byzantium",
-      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"] } },
     },
   };
 
@@ -76,7 +76,8 @@ function main() {
     for (const [name, artifact] of Object.entries(output.contracts[file])) {
       const bytecode = artifact.evm.bytecode.object;
       if (!bytecode) continue; // 库或接口的空字节码跳过
-      const out = { contractName: name, compiler: version, abi: artifact.abi, bytecode: "0x" + bytecode };
+      const out = { contractName: name, compiler: version, abi: artifact.abi, bytecode: "0x" + bytecode,
+        deployedBytecode: "0x" + artifact.evm.deployedBytecode.object };
       fs.writeFileSync(path.join(BUILD_DIR, name + ".json"), JSON.stringify(out, null, 2) + "\n");
       written.push(name);
     }

@@ -97,7 +97,14 @@ suite("TraceV3 链上指定交接", function () {
     assert.equal((await trace.getDesignations("V3-I"))[0].toLowerCase(), distributor.address.toLowerCase());
   });
   it("V3-7 仅 owner 管理角色，撤销后指定账户也不能写", async function () {
+    assert.equal(await trace.isProducer(owner.address), false);
+    assert.equal(await trace.isDistributor(owner.address), false);
+    assert.equal(await trace.isRetailer(owner.address), false);
+    await rejected(trace.connect(distributor).addProducer(outsider.address),
+      "Ownable: caller is not the owner");
     await rejected(trace.connect(distributor).addDistributor(outsider.address),
+      "Ownable: caller is not the owner");
+    await rejected(trace.connect(distributor).addRetailer(outsider.address),
       "Ownable: caller is not the owner");
     await start("V3-R");
     await (await trace.removeDistributor(distributor.address)).wait();
@@ -106,6 +113,9 @@ suite("TraceV3 链上指定交接", function () {
     await (await trace.addDistributor(distributor.address)).wait();
     const receipt = await middle("V3-R");
     assert.ok(receipt.logs.some(log => { try { return trace.interface.parseLog(log)?.name === "TraceStageRecorded"; } catch { return false; } }));
+    await (await trace.removeRetailer(retailer.address)).wait();
+    await rejected(trace.connect(retailer).addTraceInfoByRetailer("V3-R", ...retail),
+      "RetailerRole: caller does not have the Retailer role");
   });
   it("V3-8 三阶段事件与 actors 保留；空溯源号拒绝", async function () {
     await rejected(trace.connect(producer).newAgroFood("", ...produce, distributor.address), "Trace: traceNumber is empty");
@@ -114,6 +124,8 @@ suite("TraceV3 链上指定交接", function () {
       const events = receipts[i].logs.flatMap(log => { try { const e = trace.interface.parseLog(log); return e?.name === "TraceStageRecorded" ? [e] : []; } catch { return []; } });
       assert.equal(events.length, 1);
       assert.equal(events[0].args.stage, BigInt(i + 1));
+      assert.equal(events[0].args.traceNumber, "V3-E");
+      assert.equal(events[0].args.actor.toLowerCase(), [producer, distributor, retailer][i].address.toLowerCase());
     }
     assert.deepEqual([...await trace.getStageActors("V3-E")].map(a => a.toLowerCase()),
       [producer, distributor, retailer].map(signer => signer.address.toLowerCase()));

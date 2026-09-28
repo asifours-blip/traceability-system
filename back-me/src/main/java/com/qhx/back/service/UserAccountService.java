@@ -4,6 +4,7 @@ import com.qhx.back.model.to.CreateUserTo;
 import com.qhx.back.model.vo.UserVO;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 账号管理。建号是幂等的：链上已有角色就跳过授权交易；授权结果未知时账号保持停用（PENDING），查证后启用。
@@ -15,6 +16,8 @@ public interface UserAccountService
     UserVO createUser(CreateUserTo createUserTo);
 
     List<UserVO> listUsers();
+
+    Map<String, Object> migrateV3Roles();
 
     void disableUser(Long userId);
 

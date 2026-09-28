@@ -18,6 +18,8 @@ import com.qhx.back.exception.AuthException;
 import com.qhx.back.exception.ChainTxException;
 import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.model.ChainTx;
+import com.qhx.back.model.TraceBatch;
+import com.qhx.back.mapper.TraceBatchMapper;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.model.vo.ChainTxVerifyVO;
 import com.qhx.back.service.ChainTxService;
@@ -26,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Date;
 import java.util.List;
@@ -42,6 +45,12 @@ public class ChainTxServiceImpl implements ChainTxService
     @Autowired
     private ChainTxMapper chainTxMapper;
     @Autowired
+    private TraceBatchMapper batchMapper;
+    @Value("${contract.address}")
+    private String v2Address;
+    @Value("${contract.v3.address:0x0}")
+    private String v3Address;
+    @Autowired
     private WeBaseClient weBaseClient;
     // 阶段交易确认后的链下处理（刷新读模型、绑定文件）；没有实现时为空
     @Autowired(required = false)
@@ -50,7 +59,13 @@ public class ChainTxServiceImpl implements ChainTxService
     @Override
     public ChainTx submit(String funcName, List<Object> params)
     {
-        return doSubmit(funcName, params, null, null, null);
+        return doSubmit("V2", funcName, params, null, null, null);
+    }
+
+    @Override
+    public ChainTx submitToContract(String version, String funcName, List<Object> params)
+    {
+        return doSubmit(version, funcName, params, null, null, null);
     }
 
     @Override
@@ -67,17 +82,32 @@ public class ChainTxServiceImpl implements ChainTxService
         if (traceNumber.length() > MAX_TRACE_NUMBER_LENGTH) {
             throw new IllegalArgumentException("溯源号长度不能超过 " + MAX_TRACE_NUMBER_LENGTH);
         }
-        return doSubmit(stage.writeFunction(), params, stage, traceNumber, guard);
+        return doSubmit(versionFor(traceNumber), stage.writeFunction(), params, stage, traceNumber, guard);
     }
 
-    private ChainTx doSubmit(String funcName, List<Object> params, TraceStage stage, String traceNumber, Runnable guard)
+    private String versionFor(String traceNumber)
+    {
+        TraceBatch batch = batchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>()
+                .eq(TraceBatch::getTraceNumber, traceNumber));
+        if (batch == null) throw new IllegalStateException("阶段交易没有批次合约绑定：" + traceNumber);
+        String version = batch.getContractVersion();
+        if (version == null) version = "V2";
+        String configured = "V3".equals(version) ? v3Address : v2Address;
+        if (!"V2".equals(version) && !"V3".equals(version)) throw new IllegalStateException("未知批次合约版本：" + version);
+        if (batch.getContractAddress() == null || !batch.getContractAddress().equalsIgnoreCase(configured)) {
+            throw new IllegalStateException("批次绑定的合约地址与当前配置不一致，拒绝发送交易");
+        }
+        return version;
+    }
+
+    private ChainTx doSubmit(String version, String funcName, List<Object> params, TraceStage stage, String traceNumber, Runnable guard)
     {
         String signer = AddressContext.getAddress();
         if (!UserAddressUtil.isLegalAddress(signer)) {
             throw new IllegalStateException("当前会话没有绑定合法的链上地址，拒绝发送交易");
         }
         String digest = ParamsDigest.of(params);
-        String bizKey = stage == null ? funcName + ":" + digest.substring(0, 16) : "trace:" + traceNumber + ":" + stage.name();
+        String bizKey = stage == null ? version + ":" + funcName + ":" + digest.substring(0, 16) : "trace:" + traceNumber + ":" + stage.name();
 
         Date now = new Date();
         ChainTx tx = new ChainTx();
@@ -120,7 +150,7 @@ public class ChainTxServiceImpl implements ChainTxService
 
         TxOutcome outcome;
         try {
-            outcome = weBaseClient.sendTransaction(funcName, params);
+            outcome = weBaseClient.sendTransaction(version, funcName, params);
         } catch (RuntimeException e) {
             log.error("交易 #{} 发送时出现异常，按结果未知处理", tx.getId(), e);
             outcome = TxOutcome.unknown(null, null, "发送过程中出现异常：" + e);
@@ -189,7 +219,7 @@ public class ChainTxServiceImpl implements ChainTxService
                     "拿不到回执，且不是溯源阶段交易，无法靠读链判定，请稍后再查证或人工核对", reloaded);
         }
 
-        StageProbe.Result probe = new StageProbe(weBaseClient)
+        StageProbe.Result probe = new StageProbe(weBaseClient, versionFor(tx.getTraceNumber()))
                 .probe(stage, tx.getTraceNumber(), tx.getSigner(), tx.getParamsDigest());
         switch (probe.conclusion) {
             case WRITTEN_BY_SIGNER: {
@@ -210,6 +240,9 @@ public class ChainTxServiceImpl implements ChainTxService
             case CONFLICT:
                 return new ChainTxVerifyVO("CONFLICT", probe.note,
                         finish(id, ChainTxState.FAILED, probe.note, "CONFLICT"));
+            case INCONCLUSIVE:
+                return new ChainTxVerifyVO("INCONCLUSIVE", probe.note,
+                        markVerify(id, "INCONCLUSIVE"));
             case NOT_WRITTEN:
             default: {
                 // 仍是 UNKNOWN（原交易之后是否上链未知），但释放业务键，允许用户显式重新提交；

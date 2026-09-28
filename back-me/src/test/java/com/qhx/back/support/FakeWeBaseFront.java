@@ -34,11 +34,19 @@ public class FakeWeBaseFront implements AutoCloseable {
         public final String user;
         public final String funcName;
         public final JSONArray params;
+        public final String contractName;
+        public final String contractAddress;
 
         Request(String user, String funcName, JSONArray params) {
+            this(user, funcName, params, "Trace", V2_ADDRESS);
+        }
+
+        Request(String user, String funcName, JSONArray params, String contractName, String contractAddress) {
             this.user = user;
             this.funcName = funcName;
             this.params = params;
+            this.contractName = contractName;
+            this.contractAddress = contractAddress;
         }
 
         @Override
@@ -53,6 +61,8 @@ public class FakeWeBaseFront implements AutoCloseable {
     }
 
     private static final String ZERO = "0x0000000000000000000000000000000000000000";
+    public static final String V2_ADDRESS = "0x3d37f47620091952443a1df9c6b23a443e746beb";
+    public static final String V3_ADDRESS = "0x1111111111111111111111111111111111111111";
 
     private final HttpServer server;
     private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -64,6 +74,7 @@ public class FakeWeBaseFront implements AutoCloseable {
     private volatile Consumer<Request> onArrival = r -> { };
     // 可选：按合约 v2 规则模拟三阶段写入与读回（阶段顺序、每阶段只写一次、getStageActors），默认关闭
     private volatile ContractSim sim;
+    private volatile ContractSim simV3;
 
     public FakeWeBaseFront() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -106,7 +117,8 @@ public class FakeWeBaseFront implements AutoCloseable {
 
     /** 打开合约模拟（每次调用都换一份空的链上状态）：未单独指定响应的三阶段写入按 v2 规则落到内存，读函数从内存返回 */
     public void simulateContract() {
-        sim = new ContractSim();
+        sim = new ContractSim(false);
+        simV3 = new ContractSim(true);
     }
 
     /**
@@ -122,11 +134,17 @@ public class FakeWeBaseFront implements AutoCloseable {
     }
 
     public boolean applyToContract(Request request) {
-        ContractSim contract = sim;
+        ContractSim contract = "TraceV3".equals(request.contractName) ? simV3 : sim;
         if (contract == null) {
             throw new IllegalStateException("未打开合约模拟");
         }
         return contract.apply(request);
+    }
+
+    /** 模拟绕过后端、直接由生产者在 v3 链上改派，用于检验链下同步。 */
+    public boolean redesignateV3(String traceNumber, String producer, String distributor) {
+        if (simV3 == null) throw new IllegalStateException("未打开 v3 合约模拟");
+        return simV3.redesignate(traceNumber, producer, distributor);
     }
 
     /** 清掉请求记录与自定义响应；合约模拟的链上状态保留 */
@@ -145,8 +163,15 @@ public class FakeWeBaseFront implements AutoCloseable {
         }
         JSONObject json = JSONUtil.parseObj(body);
         String funcName = json.getStr("funcName");
-        Request request = new Request(json.getStr("user"), funcName, json.getJSONArray("funcParam"));
+        Request request = new Request(json.getStr("user"), funcName, json.getJSONArray("funcParam"),
+                json.getStr("contractName"), json.getStr("contractAddress"));
         requests.add(request);
+        boolean v2 = "Trace".equals(request.contractName) && V2_ADDRESS.equalsIgnoreCase(request.contractAddress);
+        boolean v3 = "TraceV3".equals(request.contractName) && V3_ADDRESS.equalsIgnoreCase(request.contractAddress);
+        if (!v2 && !v3) {
+            json(400, "{\"code\":400,\"errorMessage\":\"contract name/address mismatch\"}").write(exchange);
+            return;
+        }
         onArrival.accept(request);
 
         Function<Request, Reply> handler = handlers.get(funcName);
@@ -163,7 +188,7 @@ public class FakeWeBaseFront implements AutoCloseable {
 
     private Reply defaultReply(Request request) {
         String funcName = request.funcName;
-        ContractSim contract = sim;
+        ContractSim contract = "TraceV3".equals(request.contractName) ? simV3 : sim;
         if (contract != null) {
             Reply simulated = contract.handle(this, request);
             if (simulated != null) {
@@ -310,12 +335,24 @@ public class FakeWeBaseFront implements AutoCloseable {
         private static final String[] WRITES = {"newAgroFood", "addTraceInfoByDistributor", "addTraceInfoByRetailer"};
         private static final String[] READS = {"getAgroFoodInfo", "getAgroFoodInfoByDistributor", "getAgroFoodInfoByRetailer"};
         private static final int[] WIDTH = {7, 8, 6};
+        private final boolean v3;
+
+        ContractSim(boolean v3) { this.v3 = v3; }
+
+        synchronized boolean redesignate(String traceNumber, String producer, String distributor) {
+            Item item = items.get(traceNumber);
+            if (!v3 || item == null || item.stage >= 2 || !producer.equalsIgnoreCase(item.actors[0])) return false;
+            item.designatedDistributor = distributor;
+            return true;
+        }
 
         private static final class Item {
             final String[] actors = {ZERO, ZERO, ZERO};
             final List<List<String>> data = new ArrayList<>(List.of(new ArrayList<>(), new ArrayList<>(), new ArrayList<>()));
             final long[] timestamps = new long[3];
             int stage;
+            String designatedDistributor = ZERO;
+            String designatedRetailer = ZERO;
         }
 
         // 与链上 agroFoodList 一样保持写入顺序
@@ -339,7 +376,9 @@ public class FakeWeBaseFront implements AutoCloseable {
                         items.put(tn, item);
                     }
                     item.actors[i] = request.user;
-                    item.data.set(i, new ArrayList<>(params.subList(1, params.size())));
+                    item.data.set(i, new ArrayList<>(params.subList(1, v3 && i < 2 ? params.size() - 1 : params.size())));
+                    if (v3 && i == 0) item.designatedDistributor = params.get(params.size() - 1);
+                    if (v3 && i == 1) item.designatedRetailer = params.get(params.size() - 1);
                     item.timestamps[i] = System.currentTimeMillis();
                     item.stage = i + 1;
                     return true;
@@ -370,12 +409,22 @@ public class FakeWeBaseFront implements AutoCloseable {
                     if (i == 2 && item.stage >= 3) {
                         return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: retail already recorded");
                     }
+                    if (v3 && i == 1 && !request.user.equalsIgnoreCase(item.designatedDistributor)) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(),
+                                "Trace: caller is not the designated distributor");
+                    }
+                    if (v3 && i == 2 && !request.user.equalsIgnoreCase(item.designatedRetailer)) {
+                        return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(),
+                                "Trace: caller is not the designated retailer");
+                    }
                     if (item == null) {
                         item = new Item();
                         items.put(tn, item);
                     }
                     item.actors[i] = request.user;
-                    item.data.set(i, new ArrayList<>(params.subList(1, params.size())));
+                    item.data.set(i, new ArrayList<>(params.subList(1, v3 && i < 2 ? params.size() - 1 : params.size())));
+                    if (v3 && i == 0) item.designatedDistributor = params.get(params.size() - 1);
+                    if (v3 && i == 1) item.designatedRetailer = params.get(params.size() - 1);
                     item.timestamps[i] = System.currentTimeMillis();
                     item.stage = i + 1;
                     return receiptSuccess(request.user, fake.nextHash(), fake.nextBlock());
@@ -397,6 +446,19 @@ public class FakeWeBaseFront implements AutoCloseable {
                     }
                     return json(200, arr.toString());
                 }
+            }
+            if (v3 && "redesignateDistributor".equals(func)) {
+                Item item = items.get(tn);
+                if (item == null) return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: traceNumber does not exist");
+                if (item.stage >= 2) return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: distribution already recorded");
+                if (!request.user.equalsIgnoreCase(item.actors[0])) return receiptRevert(request.user, fake.nextHash(), fake.nextBlock(), "Trace: caller is not the producer");
+                item.designatedDistributor = params.get(1);
+                return receiptSuccess(request.user, fake.nextHash(), fake.nextBlock());
+            }
+            if (v3 && "getDesignations".equals(func)) {
+                Item item = items.get(tn);
+                if (item == null) return callRevert("Trace: traceNumber does not exist");
+                return callResult(item.designatedDistributor, item.designatedRetailer);
             }
             if ("getStageActors".equals(func)) {
                 Item item = items.get(tn);

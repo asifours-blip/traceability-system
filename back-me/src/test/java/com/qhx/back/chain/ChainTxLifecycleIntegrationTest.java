@@ -67,6 +67,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
+        "contract.v3.address=0x1111111111111111111111111111111111111111",
+        "contract.address=0x3d37f47620091952443a1df9c6b23a443e746beb",
         "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
         "auth.bootstrap-admin.username=admin",
         "auth.bootstrap-admin.password=" + ChainTxLifecycleIntegrationTest.ADMIN_PASSWORD,
@@ -153,6 +155,8 @@ class ChainTxLifecycleIntegrationTest {
         batch.setProducerId(producer0.getId());
         batch.setDistributorId(distributorId);
         batch.setRetailerId(retailerId);
+        batch.setContractVersion("V2");
+        batch.setContractAddress("0x3d37f47620091952443a1df9c6b23a443e746beb");
         batch.setCreatedAt(new Date());
         batch.setUpdatedAt(new Date());
         traceBatchMapper.insert(batch);
@@ -177,7 +181,9 @@ class ChainTxLifecycleIntegrationTest {
         assertEquals(1, row.getStage());
         assertEquals("newAgroFood", row.getFuncName());
         assertEquals(producer.getChainAddress(), row.getSigner());
-        assertEquals(ParamsDigest.of(producerParams(tn)), row.getParamsDigest());
+        List<Object> v3Params = new java.util.ArrayList<>(producerParams(tn));
+        v3Params.add(distributor0.getChainAddress());
+        assertEquals(ParamsDigest.of(v3Params), row.getParamsDigest());
         assertEquals("0x0", row.getReceiptStatus());
         assertNull(row.getInflightKey());
     }
@@ -248,13 +254,14 @@ class ChainTxLifecycleIntegrationTest {
         String tn = traceNumber();
         // JDK HttpServer 无法在响应中途断开，这一笔临时改走原始 socket 替身
         String original = httpUtil.URL;
-        // 第 1 个请求是生产前置的只读检查（溯源号在链上不存在），第 2 个才是交易
+        // v3 和 v2 各检查一次溯源号，第 3 个请求才是交易
         try (RawHttpStub stub = new RawHttpStub(
+                RawHttpStub.okJson("[\"Call contract return error: Trace: traceNumber does not exist\"]"),
                 RawHttpStub.okJson("[\"Call contract return error: Trace: traceNumber does not exist\"]"),
                 RawHttpStub.truncated("{\"transactionHash\":\"0x", 800))) {
             httpUtil.URL = stub.baseUrl();
             perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(producerBody(tn)), token, 202);
-            assertEquals(2, stub.requestCount());
+            assertEquals(3, stub.requestCount());
         } finally {
             httpUtil.URL = original;
         }
@@ -364,6 +371,7 @@ class ChainTxLifecycleIntegrationTest {
         // 默认 onReceipt：HTTP 500（v1.5.5 查不到回执的实测行为）
         fake.on("getStageActors", r -> callResult(producer.getChainAddress(), ZERO, ZERO));
         fake.on("getAgroFoodInfo", r -> callResult(producerChainData(1790529909955L)));
+        fake.on("getDesignations", r -> callResult(distributor0.getChainAddress(), ZERO));
         JSONObject data = perform(post("/chain-tx/" + id + "/verify"), token, 200).getJSONObject("data");
         assertEquals("STATE_CONFIRMED", data.getStr("conclusion"));
         assertEquals("CONFIRMED", chainTxMapper.selectById(id).getState());

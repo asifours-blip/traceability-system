@@ -43,6 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
@@ -104,6 +105,10 @@ public class BatchServiceImpl implements BatchService
     private TraceReadModelMapper readModelMapper;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Value("${contract.v3.address:0x0}")
+    private String v3Address;
+    @Value("${contract.address:0x0}")
+    private String v2Address;
 
     // ---------------------------------------------------------------- 三阶段写入
 
@@ -128,9 +133,15 @@ public class BatchServiceImpl implements BatchService
         // 生产认证必须是本账号经 /upload 上传、尚未被使用的文件
         fileService.checkUsable(v, "productionCert", (String) values.get("productionCert"), me, tn, TraceStage.PRODUCTION);
         v.throwIfInvalid();
-
-        ChainTraceReader chain = reader();
+        TraceBatch batch = findBatch(tn);
+        if ((batch == null || "V3".equals(version(batch))) && (v3Address == null || "0x0".equals(v3Address))) {
+            throw new BusinessException(503, "未配置 v3 合约地址，不能创建新批次");
+        }
+        ChainTraceReader chain = batch == null ? new ChainTraceReader(weBaseClient, "V3") : reader(batch);
         List<String> actors = chain.actors(tn);
+        if (actors == null && batch == null && new ChainTraceReader(weBaseClient).actors(tn) != null) {
+            throw new BusinessException(409, "该溯源号已存在于 v2 合约，请换一个溯源号");
+        }
         if (actors != null) {
             String producer = chain.actor(actors, TraceStage.PRODUCTION);
             throw new BusinessException(409, me.getChainAddress().equalsIgnoreCase(producer)
@@ -139,13 +150,14 @@ public class BatchServiceImpl implements BatchService
         }
 
         // 占用溯源号：唯一索引兜底并发；已存在且属于本人时视为重新提交（上次失败或查证后未写入）
-        TraceBatch batch = findBatch(tn);
         if (batch == null) {
             TraceBatch created = new TraceBatch();
             created.setTraceNumber(tn);
             created.setProductName((String) values.get("productName"));
             created.setProducerId(me.getId());
             created.setDistributorId(distributor.getId());
+            created.setContractVersion("V3");
+            created.setContractAddress(v3Address);
             created.setCreatedAt(new Date());
             created.setUpdatedAt(new Date());
             try {
@@ -169,6 +181,7 @@ public class BatchServiceImpl implements BatchService
         List<Object> params = new ArrayList<>();
         params.add(tn);
         params.addAll(values.values());
+        if ("V3".equals(batch == null ? "V3" : version(batch))) params.add(distributor.getChainAddress());
         return chainTxService.submitStage(TraceStage.PRODUCTION, params);
     }
 
@@ -195,10 +208,14 @@ public class BatchServiceImpl implements BatchService
         v.throwIfInvalid();
 
         TraceBatch batch = requireBatch(tn);
+        if ("V3".equals(version(batch))) {
+            readModelService.refresh(tn);
+            batch = requireBatch(tn);
+        }
         if (!me.getId().equals(batch.getDistributorId())) {
             throw new AuthException(403, "只有该批次指定的分销商可以录入分销信息");
         }
-        ChainTraceReader chain = reader();
+        ChainTraceReader chain = reader(batch);
         List<String> actors = chain.actors(tn);
         if (actors == null) {
             throw new BusinessException(409, "该批次的生产信息尚未上链，不能录入分销信息");
@@ -208,10 +225,12 @@ public class BatchServiceImpl implements BatchService
             throw new BusinessException(409, "链上生产记录的写入者不是本批次的生产商，拒绝交接");
         }
 
-        if (batch.getRetailerId() == null) {
-            assignFirst(batch, TraceStage.RETAIL, retailer, me);
-        } else if (!retailer.getId().equals(batch.getRetailerId())) {
-            doReassign(batch, TraceStage.RETAIL, retailer, me, "录入分销信息时变更");
+        if (!"V3".equals(version(batch))) {
+            if (batch.getRetailerId() == null) {
+                assignFirst(batch, TraceStage.RETAIL, retailer, me);
+            } else if (!retailer.getId().equals(batch.getRetailerId())) {
+                doReassign(batch, TraceStage.RETAIL, retailer, me, "录入分销信息时变更");
+            }
         }
 
         values.put("distributePrice", TraceValidator.toLong(to.getDistributePrice()));
@@ -220,6 +239,7 @@ public class BatchServiceImpl implements BatchService
         List<Object> params = new ArrayList<>();
         params.add(tn);
         params.addAll(values.values());
+        if ("V3".equals(version(batch))) params.add(retailer.getChainAddress());
         Long myId = me.getId();
         return chainTxService.submitStage(TraceStage.DISTRIBUTION, params,
                 () -> requireStillAssigned(tn, TraceStage.DISTRIBUTION, myId));
@@ -243,11 +263,15 @@ public class BatchServiceImpl implements BatchService
                 .throwIfInvalid();
 
         TraceBatch batch = requireBatch(tn);
+        if ("V3".equals(version(batch))) {
+            readModelService.refresh(tn);
+            batch = requireBatch(tn);
+        }
         if (!me.getId().equals(batch.getRetailerId())) {
             throw new AuthException(403, "只有该批次指定的零售商可以录入零售信息");
         }
         // 依赖上一阶段的规则以链上数据为准
-        ChainTraceReader chain = reader();
+        ChainTraceReader chain = reader(batch);
         Map<String, Object> distribution = chain.stage(tn, TraceStage.DISTRIBUTION);
         if (distribution == null) {
             throw new BusinessException(409, "该批次的分销信息尚未上链，不能录入零售信息");
@@ -291,7 +315,22 @@ public class BatchServiceImpl implements BatchService
             v.add("reason", "长度不能超过 200");
         }
         v.throwIfInvalid();
+        if ("V3".equals(version(batch)) && stage == TraceStage.RETAIL) {
+            throw new BusinessException(409, "v3 零售商在分销写入时上链指定，合约未提供零售改派接口");
+        }
         Long current = stage == TraceStage.DISTRIBUTION ? batch.getDistributorId() : batch.getRetailerId();
+        if ("V3".equals(version(batch)) && stage == TraceStage.DISTRIBUTION && !target.getId().equals(current)) {
+            ChainTraceReader chain = reader(batch);
+            List<String> actors = chain.actors(traceNumber);
+            if (actors != null) {
+                List<String> designated = chain.designations(traceNumber);
+                if (designated == null || !target.getChainAddress().equalsIgnoreCase(designated.get(0))) {
+                    chainTxService.submitToContract("V3", "redesignateDistributor",
+                            Arrays.asList(traceNumber, target.getChainAddress()));
+                }
+                // 只有确认上链或读链确认目标已生效后才更改 MySQL 台账。
+            }
+        }
         if (current == null) {
             assignFirst(batch, stage, target, me);
         } else {
@@ -335,7 +374,7 @@ public class BatchServiceImpl implements BatchService
             return;
         }
         String label = STAGE_LABELS.get(stage);
-        ChainTraceReader chain = reader();
+        ChainTraceReader chain = reader(batch);
         if (chain.actor(chain.actors(batch.getTraceNumber()), stage) != null) {
             throw new BusinessException(409, label + "信息已上链，不能再变更" + label + "对象");
         }
@@ -495,7 +534,7 @@ public class BatchServiceImpl implements BatchService
         Map<Long, UserAccount> users = users(ids);
 
         // 链上数据：读不到时仍返回链下状态，并给出 chainError，不拿链下副本冒充
-        ChainTraceReader chain = reader();
+        ChainTraceReader chain = reader(batch);
         List<String> actors = null;
         Map<TraceStage, Map<String, Object>> onChain = new EnumMap<>(TraceStage.class);
         String chainError = null;
@@ -558,12 +597,17 @@ public class BatchServiceImpl implements BatchService
                 && resubmittable(statusOf.get(TraceStage.RETAIL)));
         permissions.put("canAssignDistributor", chainOk && me.getId().equals(batch.getProducerId())
                 && !onChain.containsKey(TraceStage.DISTRIBUTION) && resubmittable(statusOf.get(TraceStage.DISTRIBUTION)));
-        permissions.put("canAssignRetailer", chainOk && batch.getDistributorId() != null && me.getId().equals(batch.getDistributorId())
+        permissions.put("canAssignRetailer", !"V3".equals(version(batch)) && chainOk && batch.getDistributorId() != null && me.getId().equals(batch.getDistributorId())
                 && !onChain.containsKey(TraceStage.RETAIL) && resubmittable(statusOf.get(TraceStage.RETAIL)));
         permissions.put("canCorrect", canCorrect);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("traceNumber", traceNumber);
+        result.put("contractVersion", version(batch));
+        result.put("contractAddress", batch.getContractAddress());
+        List<String> designated = chainError == null && actors != null ? chain.designations(traceNumber) : null;
+        result.put("chainDesignatedDistributor", designated == null ? null : designated.get(0));
+        result.put("chainDesignatedRetailer", designated == null ? null : designated.get(1));
         result.put("productName", batch.getProductName());
         result.put("createdAt", batch.getCreatedAt());
         result.put("producer", party(users.get(batch.getProducerId())));
@@ -637,7 +681,7 @@ public class BatchServiceImpl implements BatchService
         v.throwIfInvalid();
 
         TraceBatch batch = requireBatch(traceNumber);
-        ChainTraceReader chain = reader();
+        ChainTraceReader chain = reader(batch);
         String writer = chain.actor(chain.actors(traceNumber), stage);
         if (writer == null) {
             throw new BusinessException(409, STAGE_LABELS.get(stage) + "信息尚未上链，没有可更正的记录");
@@ -814,7 +858,7 @@ public class BatchServiceImpl implements BatchService
         TraceStage stage = parsePublicFileStage(stageName);
         String field = TraceFields.fileField(stage).orElseThrow(() -> new BusinessException(400, "该阶段没有文件"));
         // CID 只从链上该溯源号该阶段的字段读取，调用方无法指定任意 CID；还必须与本系统已绑定（BOUND）的记录一致
-        Map<String, Object> data = reader().stage(traceNumber, stage);
+        Map<String, Object> data = reader(findBatch(traceNumber)).stage(traceNumber, stage);
         String cid = data == null ? null : (String) data.get(field);
         if (StrUtil.isBlank(cid)) {
             throw new BusinessException(404, "该溯源号的" + STAGE_LABELS.get(stage) + "阶段没有登记文件",
@@ -947,8 +991,18 @@ public class BatchServiceImpl implements BatchService
         return user;
     }
 
-    private ChainTraceReader reader()
+    private String version(TraceBatch batch)
     {
-        return new ChainTraceReader(weBaseClient);
+        return batch == null || batch.getContractVersion() == null ? "V2" : batch.getContractVersion();
+    }
+
+    private ChainTraceReader reader(TraceBatch batch)
+    {
+        if (batch == null) return new ChainTraceReader(weBaseClient);
+        String configured = "V3".equals(version(batch)) ? v3Address : v2Address;
+        if (batch.getContractAddress() == null || !batch.getContractAddress().equalsIgnoreCase(configured)) {
+            throw new BusinessException(409, "批次绑定的合约地址与当前配置不一致，拒绝读写链上数据");
+        }
+        return new ChainTraceReader(weBaseClient, version(batch));
     }
 }

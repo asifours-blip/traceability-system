@@ -47,6 +47,12 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
     public String CONTRACT_NAME;
     @Value("${contract.abi}")
     public String CONTRACT_ABI;
+    @Value("${contract.v3.address:0x0}")
+    public String CONTRACT_V3_ADDRESS;
+    @Value("${contract.v3.name:TraceV3}")
+    public String CONTRACT_V3_NAME;
+    @Value("${contract.v3.abi:[]}")
+    public String CONTRACT_V3_ABI;
     @Value("${webase-front.group-id:1}")
     public int GROUP_ID = 1;
     // 连接超时：连不上说明请求没有送达，交易一定没有发出
@@ -92,19 +98,24 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
     }
 
     public JSONArray call(String funcName){
-        return call(OWNER, funcName, new ArrayList<>());
+        return call("V2", OWNER, funcName, new ArrayList<>());
     }
 
     public JSONArray call(String funcName, List<Object> params) {
-        return call(OWNER, funcName, params);
+        return call("V2", OWNER, funcName, params);
 
     }
 
     // 只读调用不签名，user 固定为 owner
-    private JSONArray call(String userAddress, String funcName, List<Object> params) {
+    @Override
+    public JSONArray call(String version, String funcName, List<Object> params) {
+        return call(version, OWNER, funcName, params);
+    }
+
+    private JSONArray call(String version, String userAddress, String funcName, List<Object> params) {
         RawResponse response;
         try {
-            response = execute(post("/trans/handle", requestBody(userAddress, funcName, params)));
+            response = execute(post("/trans/handle", requestBody(version, userAddress, funcName, params)));
         } catch (IOException e) {
             throw new WeBaseFrontException("调用 WeBASE-Front 失败：" + e);
         }
@@ -120,12 +131,17 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
 
     @Override
     public TxOutcome sendTransaction(String funcName, List<Object> params) {
+        return sendTransaction("V2", funcName, params);
+    }
+
+    @Override
+    public TxOutcome sendTransaction(String version, String funcName, List<Object> params) {
         // 签名地址只来自服务端会话绑定的地址（拦截器写入 AddressContext）
         String signer = AddressContext.getAddress();
         if (!UserAddressUtil.isLegalAddress(signer)) {
             throw new IllegalStateException("当前会话没有绑定合法的链上地址，拒绝发送交易");
         }
-        HttpPost request = post("/trans/handle", requestBody(signer, funcName, params));
+        HttpPost request = post("/trans/handle", requestBody(version, signer, funcName, params));
         RawResponse response;
         try {
             response = execute(request);
@@ -161,12 +177,17 @@ public class HttpUtil implements com.qhx.back.client.WeBaseClient {
         return WeBaseResponses.classifyReceiptQuery(response.status, response.body, txHash);
     }
 
-    private String requestBody(String userAddress, String funcName, List<Object> params) {
+    private String requestBody(String version, String userAddress, String funcName, List<Object> params) {
+        boolean v3 = "V3".equals(version);
+        if (!v3 && !"V2".equals(version)) throw new IllegalArgumentException("未知合约版本：" + version);
+        if (v3 && (CONTRACT_V3_ADDRESS == null || "0x0".equals(CONTRACT_V3_ADDRESS))) {
+            throw new IllegalStateException("未配置 v3 合约地址");
+        }
         JSONObject requestBody = new JSONObject();
         requestBody.putOpt("groupId", GROUP_ID);
-        requestBody.putOpt("contractName", CONTRACT_NAME);
-        requestBody.putOpt("contractAddress", CONTRACT_ADDRESS);
-        requestBody.putOpt("contractAbi", JSONUtil.parseArray(CONTRACT_ABI));
+        requestBody.putOpt("contractName", v3 ? CONTRACT_V3_NAME : CONTRACT_NAME);
+        requestBody.putOpt("contractAddress", v3 ? CONTRACT_V3_ADDRESS : CONTRACT_ADDRESS);
+        requestBody.putOpt("contractAbi", JSONUtil.parseArray(v3 ? CONTRACT_V3_ABI : CONTRACT_ABI));
         requestBody.putOpt("funcName", funcName);
         requestBody.putOpt("funcParam", params);
         requestBody.putOpt("user", userAddress);

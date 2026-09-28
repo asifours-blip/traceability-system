@@ -418,10 +418,13 @@ abstract class FilesAndQueriesTestBase extends FlowTestSupport {
         assertEquals(before, snapshot(mine));
 
         // 与逐条读链的结果一致
-        ChainTraceReader chain = new ChainTraceReader(weBaseClient);
-        List<String> onChain = chain.list();
+        ChainTraceReader v2 = new ChainTraceReader(weBaseClient);
+        ChainTraceReader v3 = new ChainTraceReader(weBaseClient, "V3");
+        List<String> onChain = new java.util.ArrayList<>(v2.list());
+        onChain.addAll(v3.list());
         assertEquals(new HashSet<>(mine), new HashSet<>(onChain));
         for (String tn : onChain) {
+            ChainTraceReader chain = v3.list().contains(tn) ? v3 : v2;
             TraceReadModel row = readModelMapper.selectById(tn);
             assertNotNull(row, tn);
             List<String> actors = chain.actors(tn);

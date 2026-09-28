@@ -34,6 +34,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,6 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.sql.init.mode=always",
+        "contract.v3.address=0x1111111111111111111111111111111111111111",
+        "contract.address=0x3d37f47620091952443a1df9c6b23a443e746beb",
         "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
         "auth.bootstrap-admin.username=admin",
         "auth.bootstrap-admin.password=" + AuthIntegrationTest.ADMIN_PASSWORD,
@@ -258,7 +261,9 @@ class AuthIntegrationTest {
         assertFalse(body.getJSONObject("data").containsKey("passwordHash"));
 
         List<FakeWeBaseFront.Request> tx = fakeWeBase.requestsFor("addProducer");
-        assertEquals(1, tx.size());
+        assertEquals(2, tx.size());
+        assertEquals("TraceV3", tx.get(0).contractName);
+        assertEquals("Trace", tx.get(1).contractName);
         assertEquals(ADMIN_ADDRESS, tx.get(0).user);
         assertEquals(Collections.singletonList(newAddress), tx.get(0).params.toList(String.class));
 
@@ -268,6 +273,55 @@ class AuthIntegrationTest {
         TestFiles.seedUploaded(fileObjectMapper, authService.authenticate(userToken).getId(), "QmCid");
         perform(post("/producer/add").contentType(MediaType.APPLICATION_JSON).content(producerBody("")), userToken, 200);
         assertEquals(newAddress, fakeWeBase.requestsFor("newAgroFood").get(0).user);
+    }
+
+    @Test
+    void v3已授权但v2授权失败_不启用新账号_重试可补齐() throws Exception {
+        String adminToken = login("admin", ADMIN_PASSWORD);
+        String address = nextAddress();
+        String username = "retry_" + SEQ.incrementAndGet();
+        AtomicBoolean v3Granted = new AtomicBoolean(false);
+        fakeWeBase.on("isProducer", r -> FakeWeBaseFront.json(200,
+                "TraceV3".equals(r.contractName) && v3Granted.get() ? "[true]" : "[false]"));
+        fakeWeBase.on("addProducer", r -> {
+            if ("TraceV3".equals(r.contractName)) {
+                v3Granted.set(true);
+                return FakeWeBaseFront.receiptSuccess(r.user, "0x" + "12".repeat(32), 8);
+            }
+            return FakeWeBaseFront.receiptRevert(r.user, "0x" + "13".repeat(32), 9, "Trace: v2 grant rejected");
+        });
+        perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON)
+                .content(createUserBody(username, UserRole.PRODUCER, address, "")), adminToken, 422);
+        assertEquals(0, userAccountMapper.selectCount(new LambdaQueryWrapper<UserAccount>()
+                .eq(UserAccount::getUsername, username)));
+        assertTrue(v3Granted.get());
+        fakeWeBase.on("addProducer", r -> FakeWeBaseFront.receiptSuccess(r.user, "0x" + "14".repeat(32), 10));
+        perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON)
+                .content(createUserBody(username, UserRole.PRODUCER, address, "")), adminToken, 200);
+        assertEquals(1, fakeWeBase.requestsFor("addProducer").stream()
+                .filter(r -> "TraceV3".equals(r.contractName)).count());
+    }
+
+    @Test
+    void 已有业务账号迁移v3角色可重复执行() throws Exception {
+        UserAccount existing = seedUser(UserRole.PRODUCER);
+        String adminToken = login("admin", ADMIN_PASSWORD);
+        AtomicBoolean granted = new AtomicBoolean(false);
+        fakeWeBase.on("isProducer", r -> FakeWeBaseFront.json(200,
+                "TraceV3".equals(r.contractName) && existing.getChainAddress().equalsIgnoreCase(r.params.getStr(0))
+                        && !granted.get() ? "[false]" : "[true]"));
+        fakeWeBase.on("isDistributor", r -> FakeWeBaseFront.json(200, "[true]"));
+        fakeWeBase.on("isRetailer", r -> FakeWeBaseFront.json(200, "[true]"));
+        fakeWeBase.on("addProducer", r -> {
+            granted.set(true);
+            return FakeWeBaseFront.receiptSuccess(r.user, "0x" + "15".repeat(32), 11);
+        });
+        JSONObject first = perform(post("/admin/users/migrate-v3-roles"), adminToken, 200).getJSONObject("data");
+        assertEquals(1, first.getInt("confirmedGranted"));
+        assertTrue(first.getJSONObject("failedOrUnknown").isEmpty());
+        JSONObject second = perform(post("/admin/users/migrate-v3-roles"), adminToken, 200).getJSONObject("data");
+        assertEquals(0, second.getInt("confirmedGranted"));
+        assertEquals(1, fakeWeBase.requestsFor("addProducer").size());
     }
 
     @Test
@@ -281,7 +335,9 @@ class AuthIntegrationTest {
         assertEquals(200, body.getInt("code"), body.toString());
 
         List<FakeWeBaseFront.Request> tx = fakeWeBase.requestsFor("removeRetailer");
-        assertEquals(1, tx.size());
+        assertEquals(2, tx.size());
+        assertEquals("Trace", tx.get(0).contractName);
+        assertEquals("TraceV3", tx.get(1).contractName);
         assertEquals(ADMIN_ADDRESS, tx.get(0).user);
         assertEquals(Collections.singletonList(retailer.getChainAddress()), tx.get(0).params.toList(String.class));
         assertTrue(fakeWeBase.requests().stream().noneMatch(r -> r.funcName.startsWith("renounce")));

@@ -15,6 +15,8 @@ public interface ChainTxService
     // 非阶段交易（授予/撤销角色、系统信息）：记录但不占用业务键
     ChainTx submit(String funcName, List<Object> params);
 
+    ChainTx submitToContract(String version, String funcName, List<Object> params);
+
     // 溯源阶段交易：params 第一个元素是溯源号；同一溯源号同一阶段有未决记录时拒绝提交
     ChainTx submitStage(TraceStage stage, List<Object> params);
 

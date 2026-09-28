@@ -1,7 +1,7 @@
 -- 批次归属、交接历史、链下更正、账号链上授权状态（MySQL 5.7+ / 8.0）
 -- 初始化：mysql -u <用户> -p <库名> < back-me/src/main/resources/db/business-schema.sql
 -- 需在 auth-schema.sql 之后执行。语句带 IF NOT EXISTS，可重复执行。离线测试用 H2（MySQL 模式）执行同一份文件。
--- 规则说明见 docs/business-flow.md：这些都是后端规则，链上合约 v2 只强制角色、阶段顺序与每阶段只写一次。
+-- 规则说明见 docs/business-flow.md：v2 交接仅后端校验，v3 交接由链上强制。
 
 CREATE TABLE IF NOT EXISTS trace_batch (
     id             BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS trace_batch (
     product_name   VARCHAR(128) NULL COMMENT '产品名（仅列表展示用的链下副本，以链上数据为准）',
     producer_id    BIGINT       NOT NULL COMMENT '建档生产商账号',
     distributor_id BIGINT       NULL COMMENT '当前指定的分销商账号，只有它能写分销阶段',
+    contract_version VARCHAR(2) NOT NULL DEFAULT 'V2' COMMENT '该批次绑定的合约版本 V2 / V3',
+    contract_address VARCHAR(42) NOT NULL COMMENT '该批次绑定的合约地址',
     retailer_id    BIGINT       NULL COMMENT '当前指定的零售商账号，只有它能写零售阶段',
     created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '更新时间',

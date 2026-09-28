@@ -64,6 +64,13 @@ public class UserController {
         return Result.success(userAccountService.createUser(createUserTo));
     }
 
+    // 可重复执行：只为 v3 尚无角色的已启用业务账号授予角色，未知结果不计成功。
+    @PostMapping("/admin/users/migrate-v3-roles")
+    @RequireRole(UserRole.ADMIN)
+    public Result migrateV3Roles() {
+        return Result.success(userAccountService.migrateV3Roles());
+    }
+
     // 管理员停用账号：撤销全部 token，并由管理员签名调用 removeX 撤销链上角色
     @PostMapping("/admin/users/{id}/disable")
     @ApiOperation(value = "停用账号")

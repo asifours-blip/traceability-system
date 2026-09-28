@@ -5,6 +5,7 @@ import cn.hutool.json.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.qhx.back.enums.UserRole;
 import com.qhx.back.model.TraceAssignmentLog;
+import com.qhx.back.model.TraceBatch;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -197,6 +198,53 @@ abstract class BusinessFlowTestBase extends FlowTestSupport {
         assertEquals("原分销商停运", logs.get(1).getReason());
     }
 
+    @Test
+    void v3链上外部改派后写前同步台账_旧分销商拒绝新分销商可写() throws Exception {
+        Party p = party(UserRole.PRODUCER);
+        Party d1 = party(UserRole.DISTRIBUTOR);
+        Party d2 = party(UserRole.DISTRIBUTOR);
+        Party r = party(UserRole.RETAILER);
+        String tn = produced(p, d1);
+        assertTrue(fake.redesignateV3(tn, p.user.getChainAddress(), d2.user.getChainAddress()));
+        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d1))), d1.token, 403);
+        TraceBatch synced = traceBatchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>().eq(TraceBatch::getTraceNumber, tn));
+        assertEquals(d2.user.getId(), synced.getDistributorId());
+        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d2))), d2.token, 200);
+    }
+
+    @Test
+    void v3仅生产批次重建后恢复链上分销指定并可继续分销() throws Exception {
+        Party p = party(UserRole.PRODUCER);
+        Party d = party(UserRole.DISTRIBUTOR);
+        Party r = party(UserRole.RETAILER);
+        String tn = produced(p, d);
+        traceBatchMapper.delete(new LambdaQueryWrapper<TraceBatch>().eq(TraceBatch::getTraceNumber, tn));
+        readModelService.rebuild(null);
+        TraceBatch restored = traceBatchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>().eq(TraceBatch::getTraceNumber, tn));
+        assertEquals("V3", restored.getContractVersion());
+        assertEquals(d.user.getId(), restored.getDistributorId());
+        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d))), d.token, 200);
+        assertEquals(r.user.getId(), traceBatchMapper.selectById(restored.getId()).getRetailerId());
+    }
+
+    @Test
+    void v3批次绑定地址漂移时拒绝读写() throws Exception {
+        Party p = party(UserRole.PRODUCER);
+        Party d = party(UserRole.DISTRIBUTOR);
+        Party r = party(UserRole.RETAILER);
+        String tn = produced(p, d);
+        TraceBatch batch = traceBatchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>().eq(TraceBatch::getTraceNumber, tn));
+        batch.setContractAddress("0x2222222222222222222222222222222222222222");
+        traceBatchMapper.updateById(batch);
+        perform(get("/batches/" + tn), p.token, 409);
+        perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
+                .content(distributorBody(tn, r.user.getUsername(), "10", "100", cert(d))), d.token, 409);
+        assertTrue(fake.requestsFor("addTraceInfoByDistributor").isEmpty());
+    }
+
     // ================================================================ 字段校验
 
     @Test
@@ -255,6 +303,8 @@ abstract class BusinessFlowTestBase extends FlowTestSupport {
                 .content(distributorBody(tn, r.user.getUsername(), "10", "100", report)), d.token, 202);
         Long txId = first.getJSONObject("data").getLong("id");
         assertEquals("UNKNOWN", chainTxMapper.selectById(txId).getState());
+        assertNull(traceBatchMapper.selectOne(new LambdaQueryWrapper<TraceBatch>()
+                .eq(TraceBatch::getTraceNumber, tn)).getRetailerId(), "v3 分销未确认不能提前指定零售台账");
 
         JSONObject again = perform(post("/distributor/add").contentType(MediaType.APPLICATION_JSON)
                 .content(distributorBody(tn, r.user.getUsername(), "10", "100", report)), d.token, 409);
@@ -354,14 +404,14 @@ abstract class BusinessFlowTestBase extends FlowTestSupport {
         assertEquals("ALREADY_ON_CHAIN", body.getJSONObject("data").getStr("roleState"));
         assertTrue(body.getJSONObject("data").getBool("enabled"));
         assertTrue(fake.requestsFor("addDistributor").isEmpty(), "链上已有角色时不应发授权交易");
-        assertEquals(1, fake.requestsFor("isDistributor").size());
+        assertEquals(2, fake.requestsFor("isDistributor").size());
         login(username, USER_PASSWORD);
     }
 
     @Test
     void 建号_授权结果未知_账号待确认不可登录_查证后启用() throws Exception {
         String admin = login("admin", ADMIN_PASSWORD);
-        fake.on("isRetailer", req -> json(200, "[false]"));
+        fake.on("isRetailer", req -> json(200, "TraceV3".equals(req.contractName) ? "[true]" : "[false]"));
         fake.on("addRetailer", req -> receiptTimeout());
         String username = "ret_" + RUN + "_" + SEQ.incrementAndGet();
         JSONObject body = perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON)

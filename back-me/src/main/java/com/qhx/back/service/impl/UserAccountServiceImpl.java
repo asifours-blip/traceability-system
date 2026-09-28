@@ -24,6 +24,7 @@ import com.qhx.back.util.UserAddressUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Collections;
 import java.util.Date;
@@ -52,6 +53,8 @@ public class UserAccountServiceImpl implements UserAccountService
     private ChainTxMapper chainTxMapper;
     @Autowired
     private WeBaseClient weBaseClient;
+    @Value("${contract.v3.address:0x0}")
+    private String v3Address;
 
     @Override
     public UserVO createUser(CreateUserTo to)
@@ -80,6 +83,8 @@ public class UserAccountServiceImpl implements UserAccountService
             throw new IllegalArgumentException("该链上地址已绑定其他账号");
         }
 
+        // 先确保 v3 角色确认上链；单边失败时不启用账号，重试按链上状态幂等补齐。
+        ensureV3Role(role, chainAddress);
         // 幂等：先读链上角色。已有该角色就不再发授权交易（避免 addX 因「已有角色」revert），直接建号
         if (hasChainRole(role, chainAddress)) {
             UserAccount account = insertAccount(to, username, role, chainAddress, true);
@@ -135,6 +140,7 @@ public class UserAccountServiceImpl implements UserAccountService
             throw new BusinessException(409, "链上仍没有该角色（授权交易状态：" + txState + "），账号保持停用；"
                     + "可稍后再查证，或点「重试授权」重新发送授权交易", UserVO.of(user, grant));
         }
+        ensureV3Role(role, user.getChainAddress());
         userAccountMapper.update(null, new LambdaUpdateWrapper<UserAccount>()
                 .set(UserAccount::getEnabled, true)
                 .set(UserAccount::getUpdatedAt, new Date())
@@ -166,6 +172,7 @@ public class UserAccountServiceImpl implements UserAccountService
             }
             throw e;
         }
+        ensureV3Role(role, user.getChainAddress());
         userAccountMapper.update(null, new LambdaUpdateWrapper<UserAccount>()
                 .set(UserAccount::getEnabled, true)
                 .set(UserAccount::getUpdatedAt, new Date())
@@ -176,9 +183,14 @@ public class UserAccountServiceImpl implements UserAccountService
 
     private boolean hasChainRole(UserRole role, String address)
     {
+        return hasChainRole("V2", role, address);
+    }
+
+    private boolean hasChainRole(String version, UserRole role, String address)
+    {
         JSONArray result;
         try {
-            result = weBaseClient.call(role.checkFunction(), Collections.singletonList(address));
+            result = weBaseClient.call(version, role.checkFunction(), Collections.singletonList(address));
         } catch (WeBaseFrontException e) {
             throw new BusinessException(503, "读取链上角色失败，未做任何改动：" + e.mes);
         }
@@ -187,6 +199,41 @@ public class UserAccountServiceImpl implements UserAccountService
             throw new BusinessException(502, "无法解析链上 " + role.checkFunction() + " 的返回：" + result);
         }
         return "true".equalsIgnoreCase(value);
+    }
+
+    /** 已有账号和新账号都用同一幂等路径补齐 v3 角色；UNKNOWN 不算成功。 */
+    private ChainTx ensureV3Role(UserRole role, String address)
+    {
+        if (v3Address == null || "0x0".equals(v3Address)) return null;
+        if (hasChainRole("V3", role, address)) return null;
+        return chainTxService.submitToContract("V3", role.addFunction(), Collections.singletonList(address));
+    }
+
+    @Override
+    public Map<String, Object> migrateV3Roles()
+    {
+        if (v3Address == null || "0x0".equals(v3Address)) {
+            throw new BusinessException(409, "未配置 v3 合约地址，不能迁移角色");
+        }
+        Map<String, Object> report = new LinkedHashMap<>();
+        int already = 0, granted = 0;
+        Map<String, String> failed = new LinkedHashMap<>();
+        for (UserAccount user : userAccountMapper.selectList(new LambdaQueryWrapper<UserAccount>()
+                .eq(UserAccount::getEnabled, true).orderByAsc(UserAccount::getId))) {
+            UserRole role = UserRole.parse(user.getRole());
+            if (!role.isBusinessRole()) continue;
+            try {
+                ChainTx tx = ensureV3Role(role, user.getChainAddress());
+                if (tx == null) already++; else granted++;
+            } catch (RuntimeException e) {
+                failed.put(user.getUsername(), e.getMessage());
+                log.error("v3 角色迁移未确认：{}", user.getUsername(), e);
+            }
+        }
+        report.put("alreadyOnChain", already);
+        report.put("confirmedGranted", granted);
+        report.put("failedOrUnknown", failed);
+        return report;
     }
 
     private UserAccount insertAccount(CreateUserTo to, String username, UserRole role, String chainAddress, boolean enabled)
@@ -265,9 +312,14 @@ public class UserAccountServiceImpl implements UserAccountService
         authService.revokeAllSessions(userId);
 
         try {
-            chainTxService.submit(role.removeFunction(), Collections.singletonList(user.getChainAddress()));
+            if (hasChainRole(role, user.getChainAddress())) {
+                chainTxService.submit(role.removeFunction(), Collections.singletonList(user.getChainAddress()));
+            }
+            if (v3Address != null && !"0x0".equals(v3Address)
+                    && hasChainRole("V3", role, user.getChainAddress())) {
+                chainTxService.submitToContract("V3", role.removeFunction(), Collections.singletonList(user.getChainAddress()));
+            }
         } catch (ChainTxException e) {
-            // 账号已停用，链上撤销可对同一用户重试本接口；结果未知时先查证，避免重复撤销被合约拒绝
             log.error("用户 {} 已停用，但链上 {} 未确认成功", user.getUsername(), role.removeFunction(), e);
             throw new ChainTxException(e.getStatus(), "账号已停用并已撤销登录，但链上撤销角色未确认成功：" + e.getMessage(), e.getData());
         }

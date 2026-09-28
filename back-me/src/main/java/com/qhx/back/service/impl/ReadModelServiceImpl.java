@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -67,6 +68,10 @@ public class ReadModelServiceImpl implements ReadModelService
     private WeBaseClient weBaseClient;
     @Autowired
     private FileService fileService;
+    @Value("${contract.address}")
+    private String v2Address;
+    @Value("${contract.v3.address:0x0}")
+    private String v3Address;
 
     private final AtomicBoolean rebuilding = new AtomicBoolean(false);
 
@@ -74,6 +79,7 @@ public class ReadModelServiceImpl implements ReadModelService
     static final class Snapshot
     {
         final List<String> actors;
+        List<String> designations;
         final Map<TraceStage, Map<String, Object>> data = new EnumMap<>(TraceStage.class);
 
         Snapshot(List<String> actors)
@@ -93,9 +99,18 @@ public class ReadModelServiceImpl implements ReadModelService
     @Override
     public TraceReadModel refresh(String traceNumber)
     {
-        Snapshot snapshot = read(new ChainTraceReader(weBaseClient), traceNumber);
+        TraceBatch bound = findBatch(traceNumber);
+        String version = bound == null || bound.getContractVersion() == null ? "V2" : bound.getContractVersion();
+        if (bound != null) requireBinding(bound);
+        Snapshot snapshot = read(new ChainTraceReader(weBaseClient, version), traceNumber);
+        if (snapshot == null && bound == null && !"0x0".equals(v3Address)) {
+            snapshot = read(new ChainTraceReader(weBaseClient, "V3"), traceNumber);
+        }
         if (snapshot == null) {
             return null;
+        }
+        if (bound != null && "V3".equals(version)) {
+            syncV3Designations(bound, snapshot, null);
         }
         TraceReadModel existing = readModelMapper.selectById(traceNumber);
         TraceReadModel row = build(traceNumber, snapshot, existing == null ? null : existing.getListIndex());
@@ -111,6 +126,7 @@ public class ReadModelServiceImpl implements ReadModelService
             return null;
         }
         Snapshot s = new Snapshot(actors);
+        s.designations = chain.designations(traceNumber);
         for (TraceStage stage : TraceStage.values()) {
             if (chain.actor(actors, stage) != null) {
                 Map<String, Object> d = chain.stage(traceNumber, stage);
@@ -120,6 +136,68 @@ public class ReadModelServiceImpl implements ReadModelService
             }
         }
         return s;
+    }
+
+    private void requireBinding(TraceBatch batch)
+    {
+        String configured = "V3".equals(batch.getContractVersion()) ? v3Address : v2Address;
+        if (batch.getContractAddress() == null || !batch.getContractAddress().equalsIgnoreCase(configured)) {
+            throw new BusinessException(409, "批次绑定的合约地址与当前配置不一致，拒绝读取；请核对迁移和部署配置");
+        }
+    }
+
+    private static String designation(Snapshot snapshot, int index)
+    {
+        if (snapshot.designations == null || snapshot.designations.size() != 2) return null;
+        String address = snapshot.designations.get(index);
+        return ChainTraceReader.ZERO_ADDRESS.equalsIgnoreCase(address) ? null : address;
+    }
+
+    /** v3 当前指定对象由链决定；账户无法映射时保留链上地址供查询，并明确告警。 */
+    private int syncV3Designations(TraceBatch batch, Snapshot snapshot, Long operatorId)
+    {
+        int changed = 0;
+        for (TraceStage stage : new TraceStage[]{TraceStage.DISTRIBUTION, TraceStage.RETAIL}) {
+            String address = designation(snapshot, stage == TraceStage.DISTRIBUTION ? 0 : 1);
+            if (address == null) continue;
+            UserAccount target = accountByAddress(address,
+                    stage == TraceStage.DISTRIBUTION ? UserRole.DISTRIBUTOR : UserRole.RETAILER);
+            if (target == null) {
+                log.warn("v3 批次 {} 的链上指定 {} 地址 {} 没有匹配的业务账号，保留链下归属并等待人工核对",
+                        batch.getTraceNumber(), stage, address);
+                continue;
+            }
+            Long current = stage == TraceStage.DISTRIBUTION ? batch.getDistributorId() : batch.getRetailerId();
+            if (target.getId().equals(current)) continue;
+            LambdaUpdateWrapper<TraceBatch> update = new LambdaUpdateWrapper<TraceBatch>()
+                    .set(TraceBatch::getUpdatedAt, new Date()).eq(TraceBatch::getId, batch.getId());
+            if (stage == TraceStage.DISTRIBUTION) {
+                update.set(TraceBatch::getDistributorId, target.getId());
+                if (current == null) update.isNull(TraceBatch::getDistributorId);
+                else update.eq(TraceBatch::getDistributorId, current);
+            } else {
+                update.set(TraceBatch::getRetailerId, target.getId());
+                if (current == null) update.isNull(TraceBatch::getRetailerId);
+                else update.eq(TraceBatch::getRetailerId, current);
+            }
+            if (batchMapper.update(null, update) == 1) {
+                TraceAssignmentLog entry = new TraceAssignmentLog();
+                entry.setTraceNumber(batch.getTraceNumber());
+                entry.setStage(stage.code());
+                entry.setFromUserId(current);
+                entry.setToUserId(target.getId());
+                entry.setOperatorId(operatorId == null ? batch.getProducerId() : operatorId);
+                entry.setReason("按 v3 链上当前指定对象同步");
+                entry.setCreatedAt(new Date());
+                assignmentLogMapper.insert(entry);
+                if (stage == TraceStage.DISTRIBUTION) batch.setDistributorId(target.getId());
+                else batch.setRetailerId(target.getId());
+                log.warn("v3 批次 {} 链下 {} 指定 {} 与链上 {} 不一致，已按链上地址同步",
+                        batch.getTraceNumber(), stage, current, address);
+                changed++;
+            }
+        }
+        return changed;
     }
 
     /** 由链上快照组装一行（不含认领状态） */
@@ -179,6 +257,17 @@ public class ReadModelServiceImpl implements ReadModelService
             return;
         }
         List<String> problems = new ArrayList<>();
+        if ("V3".equals(batch.getContractVersion())) {
+            for (TraceStage stage : new TraceStage[]{TraceStage.DISTRIBUTION, TraceStage.RETAIL}) {
+                String designated = designation(s, stage == TraceStage.DISTRIBUTION ? 0 : 1);
+                if (designated == null) continue;
+                Long assigned = stage == TraceStage.DISTRIBUTION ? batch.getDistributorId() : batch.getRetailerId();
+                UserAccount account = assigned == null ? null : userAccountMapper.selectById(assigned);
+                if (account == null || !designated.equalsIgnoreCase(account.getChainAddress())) {
+                    problems.add(LABELS.get(stage) + "阶段链上指定地址 " + designated + " 与链下归属不一致");
+                }
+            }
+        }
         for (TraceStage stage : TraceStage.values()) {
             String writer = actor(s, stage);
             if (writer == null) {
@@ -258,9 +347,6 @@ public class ReadModelServiceImpl implements ReadModelService
     private Map<String, Object> doRebuild(Long operatorId)
     {
         long started = System.currentTimeMillis();
-        ChainTraceReader chain = new ChainTraceReader(weBaseClient);
-        List<String> list = chain.list();
-
         Map<String, Integer> rows = new LinkedHashMap<>();
         rows.put("created", 0);
         rows.put("updated", 0);
@@ -275,11 +361,17 @@ public class ReadModelServiceImpl implements ReadModelService
         List<Map<String, String>> errors = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
-        for (int i = 0; i < list.size(); i++) {
+        for (String version : new String[]{"V2", "V3"}) {
+            if ("V3".equals(version) && "0x0".equals(v3Address)) continue;
+            ChainTraceReader chain = new ChainTraceReader(weBaseClient, version);
+            List<String> list = chain.list();
+            for (int i = 0; i < list.size(); i++) {
             String tn = list.get(i);
-            if (!seen.add(tn)) {
-                continue;
-            }
+            TraceBatch bound = findBatch(tn);
+            if (bound != null) requireBinding(bound);
+            if (bound != null && bound.getContractVersion() != null
+                    && !version.equals(bound.getContractVersion())) continue;
+            if (!seen.add(tn)) continue;
             try {
                 Snapshot s = read(chain, tn);
                 if (s == null) {
@@ -290,12 +382,13 @@ public class ReadModelServiceImpl implements ReadModelService
                 // 1. 归属回填（只补缺，不改本系统已有的指定关系）
                 TraceBatch batch = findBatch(tn);
                 if (batch == null) {
-                    batch = backfillBatch(tn, s, operatorId);
+                    batch = backfillBatch(tn, s, operatorId, version);
                     if (batch != null) {
                         batchesBackfilled++;
                     }
                 } else {
-                    partnersBackfilled += backfillPartners(batch, s, operatorId);
+                    partnersBackfilled += "V3".equals(version)
+                            ? syncV3Designations(batch, s, operatorId) : backfillPartners(batch, s, operatorId);
                     batch = findBatch(tn);
                 }
                 // 2. 读模型行
@@ -318,6 +411,7 @@ public class ReadModelServiceImpl implements ReadModelService
                 }
             } catch (BusinessException e) {
                 errors.add(error(tn, e.getMessage()));
+            }
             }
         }
 
@@ -343,19 +437,21 @@ public class ReadModelServiceImpl implements ReadModelService
     }
 
     /** 旧批次：按链上生产阶段写入者匹配生产商账号，匹配上才建归属记录；下游阶段已写入的，同样按写入者匹配 */
-    private TraceBatch backfillBatch(String tn, Snapshot s, Long operatorId)
+    private TraceBatch backfillBatch(String tn, Snapshot s, Long operatorId, String version)
     {
         UserAccount producer = accountByAddress(actor(s, TraceStage.PRODUCTION), UserRole.PRODUCER);
         if (producer == null || !TraceFieldsLength.fits(tn)) {
             return null;
         }
-        UserAccount distributor = accountByAddress(actor(s, TraceStage.DISTRIBUTION), UserRole.DISTRIBUTOR);
-        UserAccount retailer = accountByAddress(actor(s, TraceStage.RETAIL), UserRole.RETAILER);
+        UserAccount distributor = accountByAddress("V3".equals(version) ? designation(s, 0) : actor(s, TraceStage.DISTRIBUTION), UserRole.DISTRIBUTOR);
+        UserAccount retailer = accountByAddress("V3".equals(version) ? designation(s, 1) : actor(s, TraceStage.RETAIL), UserRole.RETAILER);
         Map<String, Object> prod = s.data.get(TraceStage.PRODUCTION);
         TraceBatch batch = new TraceBatch();
         batch.setTraceNumber(tn);
         batch.setProductName(prod == null ? null : StrUtil.maxLength(str(prod.get("productName")), 120));
         batch.setProducerId(producer.getId());
+        batch.setContractVersion(version);
+        batch.setContractAddress("V3".equals(version) ? v3Address : v2Address);
         batch.setDistributorId(distributor == null ? null : distributor.getId());
         batch.setRetailerId(retailer == null ? null : retailer.getId());
         batch.setCreatedAt(new Date());

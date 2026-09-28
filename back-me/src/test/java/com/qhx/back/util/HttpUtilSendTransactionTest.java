@@ -79,6 +79,22 @@ class HttpUtilSendTransactionTest {
     }
 
     @Test
+    void v2与v3请求必须分别带匹配的合约名和地址() {
+        util.CONTRACT_V3_NAME = "TraceV3";
+        util.CONTRACT_V3_ADDRESS = FakeWeBaseFront.V3_ADDRESS;
+        util.CONTRACT_V3_ABI = "[]";
+        fake.on("isProducer", r -> json(200, "[false]"));
+        util.call("V2", "isProducer", List.of(SIGNER));
+        util.call("V3", "isProducer", List.of(SIGNER));
+        assertEquals("Trace", fake.requests().get(0).contractName);
+        assertEquals(FakeWeBaseFront.V2_ADDRESS, fake.requests().get(0).contractAddress);
+        assertEquals("TraceV3", fake.requests().get(1).contractName);
+        assertEquals(FakeWeBaseFront.V3_ADDRESS, fake.requests().get(1).contractAddress);
+        util.CONTRACT_V3_ADDRESS = FakeWeBaseFront.V2_ADDRESS;
+        assertThrows(RuntimeException.class, () -> util.call("V3", "isProducer", List.of(SIGNER)));
+    }
+
+    @Test
     void revert_REVERTED_带解码后的原因() {
         fake.on("addTraceInfoByDistributor", r -> receiptRevert(r.user, HASH, 8, "Trace: distribution already recorded"));
         TxOutcome o = util.sendTransaction("addTraceInfoByDistributor", List.of("SY1"));

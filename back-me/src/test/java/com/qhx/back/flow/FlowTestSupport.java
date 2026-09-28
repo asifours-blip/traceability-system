@@ -8,10 +8,12 @@ import com.qhx.back.enums.UserRole;
 import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.mapper.FileObjectMapper;
 import com.qhx.back.mapper.TraceAssignmentLogMapper;
+import com.qhx.back.mapper.TraceBatchMapper;
 import com.qhx.back.mapper.UserAccountMapper;
 import com.qhx.back.model.ChainTx;
 import com.qhx.back.model.UserAccount;
 import com.qhx.back.service.AuthService;
+import com.qhx.back.service.ReadModelService;
 import com.qhx.back.support.FakeKubo;
 import com.qhx.back.support.FakeWeBaseFront;
 import com.qhx.back.task.IotDataSimulatorTask;
@@ -49,6 +51,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "spring.sql.init.mode=always",
+        "contract.v3.address=0x1111111111111111111111111111111111111111",
+        "contract.address=0x3d37f47620091952443a1df9c6b23a443e746beb",
         "spring.sql.init.schema-locations=classpath:db/auth-schema.sql,classpath:db/chain-tx-schema.sql,classpath:db/business-schema.sql",
         "auth.bootstrap-admin.username=admin",
         "auth.bootstrap-admin.password=" + FlowTestSupport.ADMIN_PASSWORD,
@@ -83,6 +87,10 @@ abstract class FlowTestSupport {
     ChainTxMapper chainTxMapper;
     @Autowired
     TraceAssignmentLogMapper assignmentLogMapper;
+    @Autowired
+    TraceBatchMapper traceBatchMapper;
+    @Autowired
+    ReadModelService readModelService;
     @Autowired
     FileObjectMapper fileObjectMapper;
     @Autowired

@@ -22,6 +22,15 @@ public interface WeBaseClient {
      */
     TxOutcome sendTransaction(String funcName, List<Object> params);
 
+    /** 绑定到批次合约的调用；测试替身默认复用现有 v2 实现。 */
+    default JSONArray call(String version, String funcName, List<Object> params) {
+        return call(funcName, params);
+    }
+
+    default TxOutcome sendTransaction(String version, String funcName, List<Object> params) {
+        return sendTransaction(funcName, params);
+    }
+
     /** 按交易哈希查回执；查不到或查询失败时返回 UNKNOWN。 */
     TxOutcome queryReceipt(String txHash);
 }

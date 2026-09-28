@@ -24,9 +24,15 @@ public class ChainTraceReader {
     private static final String NOT_EXIST = "Trace: traceNumber does not exist";
 
     private final WeBaseClient client;
+    private final String version;
 
     public ChainTraceReader(WeBaseClient client) {
+        this(client, "V2");
+    }
+
+    public ChainTraceReader(WeBaseClient client, String version) {
         this.client = client;
+        this.version = version;
     }
 
     /** getStageActors：(producer, distributor, retailer)；溯源号在链上不存在时返回 null */
@@ -49,7 +55,7 @@ public class ChainTraceReader {
     public List<String> list() {
         JSONArray result;
         try {
-            result = client.call("getAgroFoodList", Collections.emptyList());
+            result = client.call(version, "getAgroFoodList", Collections.emptyList());
         } catch (WeBaseFrontException e) {
             throw new BusinessException(503, "读取链上数据失败，请稍后重试（" + e.mes + "）");
         }
@@ -66,6 +72,13 @@ public class ChainTraceReader {
         } catch (RuntimeException e) {
             throw new BusinessException(502, "无法解析链上 getAgroFoodList 的返回：" + StrUtil.maxLength(String.valueOf(only), 200));
         }
+    }
+
+    /** v3 链上当前指定对象；v2 没有这个字段。 */
+    public List<String> designations(String traceNumber) {
+        if (!"V3".equals(version)) return null;
+        JSONArray result = read("getDesignations", traceNumber);
+        return result == null ? null : result.toList(String.class);
     }
 
     /** 某阶段在链上的写入者；未写入或溯源号不存在返回 null */
@@ -107,7 +120,7 @@ public class ChainTraceReader {
     private JSONArray read(String function, String traceNumber) {
         JSONArray result;
         try {
-            result = client.call(function, Collections.singletonList(traceNumber));
+            result = client.call(version, function, Collections.singletonList(traceNumber));
         } catch (WeBaseFrontException e) {
             throw new BusinessException(503, "读取链上数据失败，请稍后重试（" + e.mes + "）");
         }

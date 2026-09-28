@@ -22,6 +22,8 @@ public class TraceBatch {
     // 当前指定的分销商 / 零售商；只有被指定者能写对应阶段
     private Long distributorId;
     private Long retailerId;
+    private String contractVersion;
+    private String contractAddress;
     private Date createdAt;
     private Date updatedAt;
 }

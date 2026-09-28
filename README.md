@@ -8,7 +8,8 @@
 
 - **三角色流转**：生产者 `newAgroFood` → 分销商 `addTraceInfoByDistributor` → 零售商 `addTraceInfoByRetailer` → 消费者查询详情
 - **联盟链存证**：关键字段写入 `Trace` 合约；角色由合约 `onlyProducer` / `onlyDistributor` / `onlyRetailer` 校验。后端另按账号角色鉴权（见「鉴权方式」）
-- **IPFS**：证书、检测报告先上传，链上存 CID（`IPFSServiceImpl` 返回 Base58 hash）
+- **IPFS**：证书、检测报告经 `/upload` 流式上传到本地 kubo（按内容判定类型、限大小、服务端算 SHA-256 并读回核对 CID），链上存 CID；交易 CONFIRMED 后才绑定、才可公开读取，超期未绑定的清理为孤儿。详见 [docs/files.md](docs/files.md)
+- **分页查询与读模型**：批次列表、消费者查询分页取 MySQL 读模型，不逐条读链；读模型可由管理员从链上幂等重建，并为本功能上线前的旧批次按链上写入者回填归属。详见 [docs/read-model.md](docs/read-model.md)
 - **IoT 看板**：`IotDataSimulatorTask` **每 5 分钟随机写入** 温湿度/光照到 MySQL，**不是真实传感器**
 - **二维码**：前端生成溯源号二维码，扫码进详情（详情接口在鉴权白名单，只返回公开字段）
 - **批次归属与交接**：生产商建档时指定分销商，分销商指定零售商，只有被指定者能写下一阶段；业务字段逐项校验；链下只追加的更正。这些是**后端规则**，链上合约只强制角色、阶段顺序与每阶段只写一次，详见 [docs/business-flow.md](docs/business-flow.md)
@@ -25,19 +26,9 @@
 | 存储 | IPFS（kubo）；链下表 `iot_sensor_data` |
 | 工具链 | Maven（编译目标 14，CI 用 JDK 21）· Vue CLI 5 · GitHub Actions（`ci.yml`） |
 
-### IPFS 本地 JAR（非 Maven Central）
+### IPFS 客户端
 
-后端用 `systemPath` 引用 `back-me/libs/` 下的 IPFS Java HTTP 客户端及其传递依赖，**不是** Maven Central 上的正式坐标，CI/本地编译都依赖这些文件存在。
-
-| 文件 | SHA-256 |
-|---|---|
-| `ipfs.jar` | `89F3F534FAFCCEBB7BB6853C8EF41DF449CF95F17E8549F284C602859DE891B3` |
-| `cid.jar` | `7FA2B60290B6ACDCEEA650EBEB3EE3E43D9B90F037D82C39830397C60D56B362` |
-| `multiaddr.jar` | `2B16FEF9280CE61A561100F06229B7903864660912F5D08EF9F4B8CF9A37FD5F` |
-| `multibase.jar` | `D459DBB9B2C2CBD19092A19C3BD417F8E3DA9A6D3B0169B413CCC8CACD60E3DA` |
-| `multihash.jar` | `42D15EC293C0B0BD51F405B90A138DB06791C5304251AEBB833A61B14D426ABD` |
-
-来源：毕业设计当时纳入的 IPFS Java HTTP client 本地包；本轮只删除了未被 POM 引用的 `junit-4.12.jar` 与 `hamcrest-core-1.3.jar`。不要把上述五个 JAR 当成可替换的 Maven 依赖，除非先做兼容性验证。
+原来 `back-me/libs/` 下以 `systemPath` 引用的五个 IPFS Java 客户端 JAR 已移除（来源不明，`cat` 只能整块读入内存，构造时就连守护进程）。现在用 JDK `HttpURLConnection` 直连 kubo HTTP RPC（`com.qhx.back.file.KuboClient`），上传与读取都是流式的，启动时不连节点。
 
 ## 系统架构
 
@@ -89,7 +80,7 @@ code1.1.3/
 - Node.js 16+、npm
 - MySQL 5.7+（IoT 表 + 账号/会话表；无库时后端仍能起，但无法登录，定时任务会写失败）
 - FISCO BCOS + WeBASE-Front（链上读写）
-- IPFS kubo（默认 `127.0.0.1:5001`）
+- IPFS kubo：`bash scripts/ipfs/setup.sh && bash scripts/ipfs/start.sh`（复制本机已有的 kubo 0.29.0 到 `D:\trace-ipfs`，独立 repo，离线，只监听 `127.0.0.1:5201`）
 
 ### 配置（不要提交密钥）
 
@@ -155,7 +146,7 @@ npm run lint
 - **流转**：严格按 生产 → 分销 → 零售 的顺序，每个阶段只能写一次；条目合约 `AgroFoodInfoItem` 只接受 `Trace` 写入，无法绕过角色与阶段检查
 - **旧合约**：早期部署（v1）的 setter 无访问控制、角色可自我扩散，这些漏洞在已部署的旧合约上仍然存在；v2 需要重新部署，旧数据不迁移。详见 [contracts/README.md](contracts/README.md)
 - **查询**：`getAgroFoodInfo` / `getAgroFoodInfoByDistributor` / `getAgroFoodInfoByRetailer` / `getAgroFoodList`
-- **没有** `getAgroFoodListDetail`：原来的 `GET /trace/list` 对每个编号再打 3 次链查询（N+1）；现已删除，批次列表 `GET /batches` 只读数据库，详情再读链
+- **没有** `getAgroFoodListDetail`：原来的 `GET /trace/list` 对每个编号再打 3 次链查询（N+1）；现已删除，批次列表 `GET /batches` 分页读数据库与读模型，详情再读链
 
 ## 鉴权方式（服务端账号 + Bearer token）
 

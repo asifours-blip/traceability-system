@@ -6,7 +6,7 @@
 2. `AddressInterceptor` 对非白名单路径按 token 的 sha256 查 `user_session`，再查 `user_account`，把账号**绑定的链上地址**写入 `AddressContext`，并按 `@RequireRole` 检查角色；客户端 `address` 头不参与
 3. Controller 组合约参数，交易经 `ChainTxService` 先写 `chain_tx` 再由 `HttpUtil` POST 到 WeBASE-Front `/trans/handle`；`sendTransaction` 只从 `AddressContext` 取签名地址；回执确认成功才返回 200，结果未知记为 UNKNOWN 待查证（[tx-lifecycle.md](tx-lifecycle.md)）
 4. WeBASE 用请求里的 `user` 作为链上 `msg.sender` 调 `Trace`（私钥托管在 WeBASE-Front）
-5. 证书/报告：前端上传 → `IPFSServiceImpl` → CID 字符串进合约字段
+5. 证书/报告：前端 multipart 上传 → `UploadPipeline`（校验、流式写 kubo、读回核对）→ `file_object`（UPLOADED）→ CID 字符串进合约字段 → 交易 CONFIRMED 后绑定（BOUND），见 [files.md](files.md)
 6. IoT：`IotDataSimulatorTask` 每 5 分钟生成量程内数据，经 `IotSensorDataService.save` 写 MySQL（此处做字段校验），看板读 `/api/iot/data`，**不上链**
 
 ## 链上 / 链下

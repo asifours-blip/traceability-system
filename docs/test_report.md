@@ -1,6 +1,6 @@
 # 测试报告
 
-日期：2026-09-28（本地）
+日期：2026-09-28（本地，阶段 5 更新：登录限流、恢复演练校验测试）
 
 ## 命令
 
@@ -15,18 +15,20 @@ cd front-me && npm ci && npm run lint && npm run build   # Node 16.20.2，与 CI
 
 | 项 | 结果 |
 |----|------|
-| `mvn -B test` | **Tests run: 147, Failures: 0, Errors: 0, Skipped: 25**（跳过的：需要真实链的 `RealChainSmokeTest`、`RealChainBusinessFlowTest`、`RealChainFilesE2ETest`，需要真实 MySQL 的 `BusinessFlowMySqlSmokeTest`、`FilesAndQueriesMySqlSmokeTest` 各 11 条） |
+| `mvn -B test` | **Tests run: 152, Failures: 0, Errors: 0, Skipped: 26**（跳过的：需要真实链的 `RealChainSmokeTest`、`RealChainBusinessFlowTest`、`RealChainFilesE2ETest`、`RealChainRestoreVerifyTest`，需要真实 MySQL 的 `BusinessFlowMySqlSmokeTest`、`FilesAndQueriesMySqlSmokeTest` 各 11 条） |
+| 备份/恢复演练（WSL，真实链 + 真实 kubo + 真实 MySQL） | `RealChainBusinessFlowTest`（连真实 MySQL）产出真实批次，备份后恢复到全新 MySQL 容器与全新 kubo 目录，`RealChainRestoreVerifyTest` 只读核对通过：批次/溯源号/文件 CID 三者对得上，消费者页读回一致，见 `docs/backup-restore.md`、`artifacts/restore-drill-2026-09-28*.txt` |
 | `BusinessFlowMySqlSmokeTest` + `FilesAndQueriesMySqlSmokeTest`（`MYSQL_IT_URL` 指向 MySQL 8.0.46 容器） | **22 / 22 通过**，连续两次；新表 schema 在真实 MySQL 上重复执行无误。第一次运行发现分页 SQL 在 MySQL 上的语法问题（H2 不报），已修复，见 `artifacts/mysql-files-and-queries-2026-09-28.txt` |
 | 真实链 + 真实 kubo（WSL，`files-e2e.sh --fresh`） | `RealChainBusinessFlowTest`（文件改为真实上传）与 `RealChainFilesE2ETest` 通过：上传 9 MB → 上链 → 绑定 → 读回 → 重启 kubo 后读回 → pin rm + gc 后 410 `FILE_MISSING` → 重建读模型（无账号写入者的旧批次进入未认领，补建账号后认领），见 `artifacts/local-chain-files-e2e-2026-09-28-164122.txt` |
 | 真实链（WSL，`run-all.sh` 官方源模式） | 冒烟 27 步符合预期；`RealChainSmokeTest`、`RealChainBusinessFlowTest` 通过，见 `artifacts/local-chain-java-test-2026-09-28-112202.txt` |
 | `npm run lint` | **No lint errors found** |
 | `npm run build` | 构建成功（4 条既有 no-console 警告与体积警告） |
 
-## 用例清单（147，其中 25 条默认跳过）
+## 用例清单（152，其中 26 条默认跳过）
 
 | 类 | 条数 | 覆盖 |
 |----|------|------|
 | `AuthIntegrationTest` | 14 | 伪造 address 头（无 token 401 / 有 token 仍用绑定地址签名）、请求体夹带地址、无/过期/登出撤销 token 401、token 只存 sha256、错误密码与不存在用户、生产商调分销 403、非 ADMIN 管理用户 403、公开注册已移除、管理员建号签名地址是管理员、停用后 token 失效且发 `removeX`、公开接口免登录 |
+| `LoginRateLimitTest` | 4 | 按账号 + IP 统计失败次数，达到上限 429 且带 `Retry-After`；不同 IP 不共享计数；登录成功清零；锁定到期后自动恢复 |
 | `AdminBootstrapTest` | 6 | 缺初始密码跳过且不抛异常、密码过短、地址非法、已有管理员不覆盖、正常创建只存哈希 |
 | `AddressInterceptorTest` | 11 | 白名单精确匹配（防 `;` 与前缀绕过）、OPTIONS、缺/非 Bearer/无效 token 401、伪造 address 头、上下文写绑定地址、角色不符 403、不写 CORS 头、ThreadLocal 清理 |
 | `UserAddressUtilTest` | 4 | 长度、`0x` 前缀、十六进制（含全角数字）校验 |
@@ -44,6 +46,7 @@ cd front-me && npm ci && npm run lint && npm run build   # Node 16.20.2，与 CI
 | `RealChainSmokeTest` | 1（默认跳过） | 设置 `E2E_SMOKE_FILE` 时直连本地隔离链；2026-09-28 在 WSL 中运行通过，记录见 `docs/artifacts/local-chain-java-test-2026-09-28*.txt` |
 | `RealChainBusinessFlowTest` | 1（默认跳过） | 完整 Spring 后端 + 本地隔离链的业务闭环；设置 `E2E_IPFS_API_URL` 时文件走真实 kubo，否则走 kubo 替身 |
 | `RealChainFilesE2ETest` | 1（默认跳过） | 真实隔离链 + 真实 kubo 的文件与读模型端到端，见上 |
+| `RealChainRestoreVerifyTest` | 1（默认跳过） | 备份/恢复演练的只读校验：恢复出来的 MySQL + kubo 上，消费者视图、文件字节、读模型重建幂等性，见 `docs/backup-restore.md` |
 | `IotDataSimulatorTaskTest` | 1 | 3 批次 × 3 指标字段与量程 |
 | `IotSensorValidatorTest` | 5 | 缺 batchId、空单位、温度/湿度超量程 |
 

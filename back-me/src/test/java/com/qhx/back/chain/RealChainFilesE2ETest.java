@@ -1,6 +1,8 @@
 package com.qhx.back.chain;
 
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
 import com.qhx.back.file.KuboClient;
@@ -8,6 +10,7 @@ import com.qhx.back.task.IotDataSimulatorTask;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -19,7 +22,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.util.Arrays;
+import java.util.List;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -62,6 +68,8 @@ class RealChainFilesE2ETest {
     IotDataSimulatorTask iotDataSimulatorTask;
     @Autowired
     MockMvc mvc;
+    @Value("${contract.abi}")
+    String abi;
 
     private static JSONObject smoke() {
         return JSONUtil.parseObj(FileUtil.readString(new File(System.getenv("E2E_SMOKE_FILE")), StandardCharsets.UTF_8));
@@ -151,24 +159,74 @@ class RealChainFilesE2ETest {
         log("GC 后公开详情 fileState=MISSING；批次详情 file=" + perform(get("/batches/" + tn), p, 200).getJSONObject("data")
                 .getJSONArray("stages").getJSONObject(0).getJSONObject("file"));
 
-        // 6. 读模型重建：真实链上的全部溯源号（含此前 smoke / 其他测试直接写入的旧批次）
+        // 6. 本系统上线前直接写在链上的旧批次：新托管账户（本系统没有它的账号）经 owner 授予生产商角色后直接调合约写生产阶段；
+        //    证书直接存进 kubo，本系统没有它的上传记录
+        String front = smoke().getJSONObject("meta").getStr("frontUrl");
+        String owner = acc.getStr("owner");
+        // 响应里有（加密的）私钥，只取地址，不记录
+        String legacyAddr = JSONUtil.parseObj(HttpRequest.get(front + "/privateKey?type=0&userName=legacy_" + run).execute().body()).getStr("address");
+        byte[] legacyPng = pngOf(64 * 1024, "legacy-" + run);
+        String legacyCid = kubo.add(new ByteArrayInputStream(legacyPng));
+        String legacyTn = "LEGACY-" + run;
+        assertEquals("0x0", trans(front, owner, "addProducer", Arrays.asList(legacyAddr)).getStr("status"));
+        JSONObject legacyTx = trans(front, legacyAddr, "newAgroFood",
+                Arrays.asList(legacyTn, "旧系统果园", "梨", "安徽砀山", "酥梨", "LB-" + run, legacyCid, "2025-10-01"));
+        assertEquals("0x0", legacyTx.getStr("status"));
+        log("直接调合约写入旧批次 " + legacyTn + "：写入者 " + legacyAddr + "（本系统无账号），hash=" + legacyTx.getStr("transactionHash")
+                + " block=" + legacyTx.getStr("blockNumber") + "；证书 cid=" + legacyCid + "（直接存入 kubo，本系统无上传记录）");
+
+        // 7. 读模型重建：遍历真实链上的全部溯源号
         JSONObject rebuild = perform(post("/admin/read-model/rebuild"), admin, 200).getJSONObject("data");
         log("第一次重建：" + rebuild);
+        assertTrue(rebuild.getJSONArray("errors").isEmpty(), rebuild.toString());
         JSONObject again = perform(post("/admin/read-model/rebuild"), admin, 200).getJSONObject("data");
-        log("第二次重建：" + again);
+        log("第二次重建（幂等）：" + again);
         assertEquals(0, again.getJSONObject("rows").getInt("created"));
         assertEquals(0, again.getJSONObject("rows").getInt("updated"));
         assertEquals(0, again.getInt("batchesBackfilled"));
+        assertEquals(0, again.getInt("removedStale"));
         assertTrue(again.getJSONArray("errors").isEmpty(), again.toString());
         JSONObject unclaimed = perform(get("/admin/read-model/unclaimed").param("size", "100"), admin, 200).getJSONObject("data");
         log("未认领 / 部分认领（" + unclaimed.getInt("total") + "）：");
-        unclaimed.getJSONArray("records").forEach(o -> {
+        boolean legacyListed = false;
+        for (Object o : unclaimed.getJSONArray("records")) {
             JSONObject r = (JSONObject) o;
             log("  " + r.getStr("traceNumber") + " " + r.getStr("claimStatus") + "：" + r.getStr("claimNote"));
-        });
+            legacyListed |= legacyTn.equals(r.getStr("traceNumber")) && "UNCLAIMED".equals(r.getStr("claimStatus"));
+        }
+        assertTrue(legacyListed, "无账号写入者的旧批次应进入未认领");
+        // 旧证书从 kubo 导入并绑定，消费者可读
+        MvcResult legacyFile = mvc.perform(get("/trace/" + legacyTn + "/file/production")).andReturn();
+        assertEquals(200, legacyFile.getResponse().getStatus());
+        assertArrayEquals(legacyPng, legacyFile.getResponse().getContentAsByteArray());
+        log("旧批次证书：重建时从 kubo 导入 → 公开读取 HTTP 200，sha256=" + sha256(legacyFile.getResponse().getContentAsByteArray()));
+
+        // 8. 为旧批次写入者补建账号后再重建：认领并出现在该生产商的分页列表里
+        perform(post("/admin/users").contentType(MediaType.APPLICATION_JSON).content(userBody("lp" + run, "PRODUCER", legacyAddr)), admin, 200);
+        JSONObject third = perform(post("/admin/read-model/rebuild"), admin, 200).getJSONObject("data");
+        log("补建账号 lp" + run + " 后重建：" + third);
+        assertEquals(1, third.getInt("batchesBackfilled"));
+        JSONObject lpList = perform(get("/batches").param("size", "10"), login("lp" + run), 200).getJSONObject("data");
+        assertEquals(1, lpList.getInt("total"));
+        assertEquals(legacyTn, lpList.getJSONArray("records").getJSONObject(0).getStr("traceNumber"));
+        log("lp" + run + " 的批次列表（分页）：total=" + lpList.getInt("total") + " " + lpList.getJSONArray("records").getJSONObject(0).getStr("traceNumber")
+                + " 生产阶段状态 " + lpList.getJSONArray("records").getJSONObject(0).getJSONObject("stages").getJSONObject("PRODUCTION").getStr("status"));
         JSONObject list = perform(get("/batches").param("size", "100"), p, 200).getJSONObject("data");
         log("生产商 fp" + run + " 的批次列表（分页，total=" + list.getInt("total") + "）："
                 + list.getJSONArray("records").stream().map(o -> ((JSONObject) o).getStr("traceNumber")).reduce((a, b) -> a + ", " + b).orElse(""));
+    }
+
+    /** 不经后端，直接经 WeBASE-Front 调合约（只用于构造旧批次） */
+    private JSONObject trans(String front, String user, String func, List<Object> params) {
+        JSONObject body = new JSONObject();
+        body.set("groupId", smoke().getJSONObject("meta").getInt("groupId"));
+        body.set("user", user);
+        body.set("contractName", "Trace");
+        body.set("contractAddress", smoke().getStr("contractAddress"));
+        body.set("contractAbi", new JSONArray(abi));
+        body.set("funcName", func);
+        body.set("funcParam", params);
+        return JSONUtil.parseObj(HttpRequest.post(front + "/trans/handle").body(body.toString()).timeout(90000).execute().body());
     }
 
     private byte[] readPublic(String tn, int status) throws Exception {

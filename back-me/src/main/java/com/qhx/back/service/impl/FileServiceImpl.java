@@ -306,6 +306,11 @@ public class FileServiceImpl implements FileService
             if (e.getKind() == IpfsException.Kind.MISSING) {
                 return BindOutcome.MISSING;
             }
+            if (e.getKind() == IpfsException.Kind.ERROR) {
+                // 节点正常但拒绝了这个 CID（例如旧数据里的 "QmCert" 不是合法 CID）：内容不可能取到，按不合规处理
+                log.warn("旧文件 CID {} 无效：{}", cid, e.getMessage());
+                return BindOutcome.REJECTED;
+            }
             log.warn("导入旧文件 {} 时 IPFS 不可用：{}", cid, e.getMessage());
             return BindOutcome.UNAVAILABLE;
         } catch (IOException e) {

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 真实环境的文件存储端到端：本地隔离链 + 真实 kubo（Windows 上的 ipfs.exe，离线、独立 repo）+ 完整后端。
-# 在 WSL 里执行：bash scripts/local-chain/files-e2e.sh
-# 前置：setup.sh / smoke.sh 已执行过（需要 $E2E_HOME/last-smoke.json）；scripts/ipfs/setup.sh 已执行过。
+# 在 WSL 里执行：bash scripts/local-chain/files-e2e.sh [--fresh]
+# 前置：setup.sh 已执行过；scripts/ipfs/setup.sh 已执行过。
+# --fresh：先重建隔离链（setup.sh --clean）并跑一遍冒烟（跳过共识停滞场景，冒烟记录只写到 $E2E_HOME/smoke-out，不覆盖 docs/artifacts 里的核验记录），
+#          RealChainBusinessFlowTest 依赖新链（outsider 账户尚无角色）；不加时沿用上次冒烟部署的合约。
 # 过程：启动链 → 启动 kubo → 启动 WSL→Windows 的 stdio 桥 → 跑 RealChainBusinessFlowTest + RealChainFilesE2ETest
 #       → 记录写到 docs/artifacts/local-chain-files-e2e-<日期时间>.txt → 停桥、停 kubo、停链。
 set -euo pipefail
@@ -16,6 +18,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+if [[ "${1:-}" == "--fresh" ]]; then
+  bash "$dir/setup.sh" --clean
+  bash "$dir/start.sh"
+  mkdir -p "$E2E_HOME/smoke-out"
+  bash "$dir/smoke.sh" --skip-stall --out-dir "$E2E_HOME/smoke-out"
+fi
 bash "$dir/start.sh"
 bash "$ipfs_dir/start.sh"
 bash "$ipfs_dir/status.sh"

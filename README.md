@@ -99,7 +99,7 @@ cd back-me/src/main/resources
 cp application-local.yml.example application-local.yml
 ```
 
-`application-local.yml` 已在 `.gitignore`，**永远不要 commit**。不要把数据库密码、合约私钥、WeBASE 密钥写进仓库。
+`application-local.yml` 已在 `.gitignore`，**永远不要 commit**。请勿把数据库密码、合约私钥、WeBASE 密钥写进仓库。
 
 ### 后端 / 前端
 
@@ -159,7 +159,7 @@ npm run lint
 
 ## 仓库历史与命名
 
-这是江西农业大学软件工程专业毕业设计的完整入库；`back-me`、`front-me` 与 `com.qhx` 是当时的课程项目命名，为避免破坏构建与既有说明而保留。首个公开提交是完整项目导入，不应被理解为线上迭代节奏。
+这是江西农业大学软件工程专业毕业设计的完整入库；`back-me`、`front-me` 与 `com.qhx` 是当时的课程项目命名，为避免破坏构建与既有说明而保留。首个公开提交是完整项目导入，并非为线上迭代节奏。
 
 ## 已知限制
 

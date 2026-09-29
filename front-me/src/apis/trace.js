@@ -30,6 +30,10 @@ export function getBatch(traceNumber) {
     return request({ url: '/batches/' + enc(traceNumber), method: 'get', timeout: 15000 })
 }
 
+export function getBatchInvestigation(traceNumber) {
+    return request({ url: '/batches/' + enc(traceNumber) + '/investigation', method: 'get', timeout: 15000 })
+}
+
 // 可指定的交接对象：生产商查 DISTRIBUTOR，分销商查 RETAILER
 export function listPartners(role) {
     return request({ url: '/partners', method: 'get', params: { role } })

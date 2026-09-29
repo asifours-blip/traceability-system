@@ -12,6 +12,7 @@ import com.qhx.back.context.UserContext;
 import com.qhx.back.enums.UserRole;
 import com.qhx.back.exception.AuthException;
 import com.qhx.back.exception.BusinessException;
+import com.qhx.back.investigation.BatchInvestigation;
 import com.qhx.back.mapper.ChainTxMapper;
 import com.qhx.back.mapper.TraceAssignmentLogMapper;
 import com.qhx.back.mapper.TraceBatchMapper;
@@ -558,6 +559,7 @@ public class BatchServiceImpl implements BatchService
         List<String> actors = null;
         Map<TraceStage, Map<String, Object>> onChain = new EnumMap<>(TraceStage.class);
         String chainError = null;
+        List<String> designated = null;
         try {
             actors = chain.actors(traceNumber);
             if (actors != null) {
@@ -567,8 +569,12 @@ public class BatchServiceImpl implements BatchService
                     }
                 }
             }
+            if (actors != null) designated = chain.designations(traceNumber);
         } catch (BusinessException e) {
             chainError = e.getMessage();
+            actors = null;
+            onChain.clear();
+            designated = null;
         }
 
         List<Map<String, Object>> stages = new ArrayList<>();
@@ -625,14 +631,13 @@ public class BatchServiceImpl implements BatchService
         result.put("traceNumber", traceNumber);
         result.put("contractVersion", version(batch));
         result.put("contractAddress", batch.getContractAddress());
-        List<String> designated = chainError == null && actors != null ? chain.designations(traceNumber) : null;
         result.put("chainDesignatedDistributor", designated == null ? null : designated.get(0));
         result.put("chainDesignatedRetailer", designated == null ? null : designated.get(1));
         result.put("productName", batch.getProductName());
         result.put("createdAt", batch.getCreatedAt());
-        result.put("producer", party(users.get(batch.getProducerId())));
-        result.put("distributor", party(users.get(batch.getDistributorId())));
-        result.put("retailer", party(users.get(batch.getRetailerId())));
+        result.put("producer", partyWithAddress(users.get(batch.getProducerId())));
+        result.put("distributor", partyWithAddress(users.get(batch.getDistributorId())));
+        result.put("retailer", partyWithAddress(users.get(batch.getRetailerId())));
         result.put("chainError", chainError);
         result.put("stages", stages);
         result.put("assignments", logs.stream().map(l -> {
@@ -648,6 +653,12 @@ public class BatchServiceImpl implements BatchService
         }).collect(Collectors.toList()));
         result.put("permissions", permissions);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> investigation(String traceNumber)
+    {
+        return BatchInvestigation.fromDetail(detail(traceNumber));
     }
 
     private static boolean resubmittable(String status)
@@ -957,6 +968,13 @@ public class BatchServiceImpl implements BatchService
         m.put("username", u.getUsername());
         m.put("companyName", u.getCompanyName());
         return m;
+    }
+
+    private Map<String, Object> partyWithAddress(UserAccount user)
+    {
+        Map<String, Object> value = party(user);
+        if (value != null) value.put("chainAddress", user.getChainAddress());
+        return value;
     }
 
     private Map<Long, UserAccount> users(Collection<Long> ids)

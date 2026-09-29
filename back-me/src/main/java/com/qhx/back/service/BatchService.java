@@ -37,6 +37,9 @@ public interface BatchService
     /** 批次详情：链上数据 + 各阶段交易状态 + 交接历史 + 更正；只有批次参与者与管理员可见 */
     Map<String, Object> detail(String traceNumber);
 
+    /** Rule-based, single-batch investigation from one authorised detail read. */
+    Map<String, Object> investigation(String traceNumber);
+
     /** 追加链下更正：只有该阶段的链上写入者本人能提交 */
     Map<String, Object> addCorrection(String traceNumber, CorrectionTo to);
 

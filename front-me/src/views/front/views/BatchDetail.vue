@@ -49,6 +49,29 @@
         </div>
       </div>
 
+      <el-card class="block investigation-card" shadow="never">
+        <div slot="header" class="investigation-head">
+          <strong>单批调查与召回草案</strong>
+          <div>
+            <el-button size="mini" :loading="investigationLoading" @click="loadInvestigation">生成只读调查</el-button>
+            <el-button v-if="investigation" size="mini" @click="downloadInvestigation">下载证据 JSON</el-button>
+          </div>
+        </div>
+        <p class="hint">规则根据当前单批详情生成线索，供人工复核或未来 Agent 消费；不是自主调查，也不判断召回必要性与责任。</p>
+        <el-alert v-if="investigationError" type="error" :title="investigationError" :closable="false" show-icon></el-alert>
+        <template v-if="investigation">
+          <el-alert v-if="investigation.status === 'INCONCLUSIVE'" type="warning" title="部分证据未核验，结论待核实" :closable="false" show-icon></el-alert>
+          <p>链上记录：{{ investigation.chainRecordStatus }} · 规则线索：{{ investigation.issues.length }} 条</p>
+          <div v-for="(issue, index) in investigation.issues" :key="index" class="investigation-issue">
+            <el-tag size="mini" type="warning">{{ issue.code }}</el-tag> {{ issue.stage }} · {{ issue.message }}
+            <p v-for="(item, n) in issue.evidence" :key="n" class="hint mono">{{ item.source }} · {{ item.readFunction || item.field }} · {{ item.value }}<template v-if="item.txHash"> · {{ item.txHash }} / {{ item.blockNumber }}</template></p>
+          </div>
+          <p v-if="!investigation.issues.length" class="hint">当前规则未发现异常；证据详情见下载 JSON。</p>
+          <p><strong>人工复核建议：</strong>{{ investigation.recallDraft.suggestedAction }}</p>
+          <p class="hint">范围仅本批；下游范围 {{ investigation.recallDraft.downstreamScope }}，库存 {{ investigation.recallDraft.inventory }}。</p>
+        </template>
+      </el-card>
+
       <div v-for="stage in stages" :key="stage.key" :ref="'stage-' + stage.key"
         class="stage-card" :class="{ active: activeStage === stage.key }" @click="focus(stage.key)">
         <div class="stage-head">
@@ -229,7 +252,7 @@
 
 <script>
 import {
-  addCorrection, assignDistributor, assignRetailer, getBatch, listPartners,
+  addCorrection, assignDistributor, assignRetailer, getBatch, getBatchInvestigation, listPartners,
   publicFileUrl, submitDistribution, submitRetail, verifyTx
 } from '@/apis/trace'
 import { STAGES, STAGE_FIELDS, STATUS_META, explainTxResult, formatTime } from '@/utils/traceFields'
@@ -248,6 +271,9 @@ export default {
       detail: null,
       loading: false,
       loadError: '',
+      investigation: null,
+      investigationLoading: false,
+      investigationError: '',
       verifying: null,
       submitting: false,
       serverErrors: {},
@@ -325,6 +351,8 @@ export default {
   methods: {
     formatTime,
     async load() {
+      this.investigation = null
+      this.investigationError = ''
       this.loading = true
       const res = await getBatch(this.traceNumber)
       this.loading = false
@@ -341,6 +369,29 @@ export default {
         this.partners = p.code === 200 ? p.data : []
       }
       this.$nextTick(() => this.scrollTo(this.activeStage))
+    },
+    async loadInvestigation() {
+      this.investigation = null
+      this.investigationLoading = true
+      this.investigationError = ''
+      try {
+        const res = await getBatchInvestigation(this.traceNumber)
+        if (res.code === 200) this.investigation = res.data
+        else this.investigationError = res.mes || '调查读取失败'
+      } catch (error) {
+        this.investigationError = error.message || '调查读取失败'
+      } finally {
+        this.investigationLoading = false
+      }
+    },
+    downloadInvestigation() {
+      const blob = new Blob([JSON.stringify(this.investigation, null, 2)], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = this.traceNumber + '-investigation.json'
+      link.click()
+      URL.revokeObjectURL(url)
     },
     stageOf(key) {
       if (!this.detail) {
@@ -530,6 +581,9 @@ export default {
   color: #86868b;
   margin-right: 8px;
 }
+
+.investigation-head { display: flex; align-items: center; justify-content: space-between; }
+.investigation-issue { border-top: 1px solid #eee; padding: 8px 0; }
 
 .stage-card {
   border: 1px solid #e4e7ed;

@@ -45,6 +45,12 @@ public class BatchController {
         return Result.success(batchService.detail(traceNumber));
     }
 
+    @GetMapping("/batches/{traceNumber}/investigation")
+    @ApiOperation(value = "单批只读调查与召回草案")
+    public Result investigation(@PathVariable String traceNumber) {
+        return Result.success(batchService.investigation(traceNumber));
+    }
+
     // 生产商变更分销商（分销阶段写入前）
     @PutMapping("/batches/{traceNumber}/distributor")
     @RequireRole(UserRole.PRODUCER)

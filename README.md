@@ -36,6 +36,8 @@ flowchart LR
 
 **查询不用每次都读链。** 列表和消费者查询读的是 MySQL 里的查询副本，这份副本随时可以从链上完整重建，重建过程是幂等的。
 
+**单个批次可以做一次只读"体检"。** 输入批次号，就能把链上阶段、交接指定、交易台账和文件状态放在一起，标出哪里对不上，比如指定的地址不一致、交易还没确认、文件缺失，并生成一份人工召回的草稿。它只读不写：不发链上交易、不通知任何人；IPFS 连不上时会写"未验证"，而不是误报成"文件丢失"；下游范围和库存这类查不到的信息一律标为未知。（[接口与证据边界](docs/batch-investigation.md)）
+
 ## 技术栈
 
 Spring Boot · MyBatis-Plus · Vue 2 + Element UI · Solidity · FISCO BCOS + WeBASE-Front · IPFS（kubo） · MySQL · JUnit / Hardhat · GitHub Actions
